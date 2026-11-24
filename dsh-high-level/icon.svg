@@ -1,0 +1,15 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="7" y="9.5" width="22" height="5" rx="2.5" fill="url(#hl-accent)" />
+  <rect x="10.5" y="17.5" width="15" height="3.5" rx="1.75" fill="url(#hl-mid)" />
+  <rect x="10.5" y="23.5" width="11" height="3.5" rx="1.75" fill="url(#hl-mid)" />
+  <defs>
+    <linearGradient id="hl-accent" x1="18" y1="9.5" x2="18" y2="14.5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6FA8FF" />
+      <stop offset="1" stop-color="#3F6FE0" />
+    </linearGradient>
+    <linearGradient id="hl-mid" x1="18" y1="17.5" x2="18" y2="27" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8FB0E8" />
+      <stop offset="1" stop-color="#7E9BD1" />
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "High-level summary",
+    "description": "Type /hl after a long answer to append a collapsed high-level summary card below that turn. /hl <n> summarizes the nth latest reply, /hl #<messageId> a specific one, /hl status shows the summary model, and /hl model <auto|current|provider/id> changes it. Each card costs one extra model request on the route used, sends that reply's text to the model, and never enters the agent's context."
+  }
+}
