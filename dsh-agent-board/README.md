@@ -33,7 +33,9 @@ that finished 13 hours ago is *Sleeping*, not *Recent*.
 **Sleeping starts folded.** The other three sections start expanded, and every
 section remembers its state for the lifetime of the panel.
 
-Both long sections show 12 rows and offer a "show N more" row.
+Each section lists at most 12 rows. The header count always states the true
+total, so a capped section still tells you how many it holds — there is no
+paging control.
 
 | Element | Source |
 |---|---|

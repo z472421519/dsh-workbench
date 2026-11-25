@@ -118,7 +118,6 @@ window.__ModuleLoader__.load({
       recent: '最近',
       sleeping: '睡眠',
       empty: '还没有会话',
-      showMore: '再显示 {n} 个',
       sleepingHint: '12 小时内无更新的会话',
       collapse: '折叠',
       expand: '展开',
@@ -134,7 +133,6 @@ window.__ModuleLoader__.load({
       recent: 'Recent',
       sleeping: 'Sleeping',
       empty: 'No sessions yet',
-      showMore: 'Show {n} more',
       sleepingHint: 'No update for 12 hours',
       collapse: 'Collapse',
       expand: 'Expand',
@@ -348,7 +346,7 @@ window.__ModuleLoader__.load({
       // Sections that start folded. Sleeping is an archive, not something to
       // scan on every glance, so it costs one header until you open it.
       const [collapsed, setCollapsed] = useState({ sleeping: true })
-      const [shownLimit, setShownLimit] = useState(SECTION_LIMIT)
+
 
       const groups = useMemo(() => {
         const now = Date.now()
@@ -398,17 +396,17 @@ window.__ModuleLoader__.load({
             })))
       }
 
-      const paged = (state) => state === 'recent' || state === 'sleeping'
+      // A section shows its newest rows up to the cap; the header count still
+      // states the true total, so nothing is hidden silently.
       const rowsFor = (state) => (collapsed[state] === true
         ? []
-        : groups.buckets[state].slice(0, paged(state) ? shownLimit : undefined))
+        : groups.buckets[state].slice(0, SECTION_LIMIT))
 
       const section = (state) => {
         const all = groups.buckets[state]
         if (all.length === 0) return null
         const isOpen = collapsed[state] !== true
         const shown = rowsFor(state)
-        const hidden = all.length - shown.length
         return h('div', { className: 'dshAb_section', key: state },
           h('button', {
             type: 'button',
@@ -449,14 +447,7 @@ window.__ModuleLoader__.load({
           },
             h(Glyph, { state: row.state }),
             h('span', { className: 'dshAb_name' }, row.title),
-            h('span', { className: 'dshAb_time' }, relative(row.time)))),
-          paged(state) && hidden > 0
-            ? h('button', {
-              type: 'button',
-              className: 'dshAb_more',
-              onClick: () => { setShownLimit((value) => value + SECTION_LIMIT) },
-            }, fill(t('showMore'), hidden))
-            : null)
+            h('span', { className: 'dshAb_time' }, relative(row.time)))))
       }
 
       return h(React.Fragment, null,
