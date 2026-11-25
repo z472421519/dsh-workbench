@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useMemo, useState } = React
+    const { useEffect, useMemo, useState } = React
 
     const NS = 'agentBoard'
     /** Sections, in display order. */
@@ -109,26 +109,7 @@ window.__ModuleLoader__.load({
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 .dshAb_glyph{flex:none;display:grid;place-items:center;width:14px;height:14px;font-size:12px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
 .dshAb_glyph[data-state=sleeping]{opacity:.6}
-/* The braille spinner swaps its two cells frame by frame, the way agentbar
-   redraws it, instead of fading opacity. */
-.dshAb_spin::before{content:'\u280B\u2819'}
-@keyframes dshAb_spinFrames{
-  0%,9.99%{content:'\u280B\u2819'}10%,19.99%{content:'\u2819\u2839'}
-  20%,29.99%{content:'\u2839\u2838'}30%,39.99%{content:'\u2838\u283C'}
-  40%,49.99%{content:'\u283C\u2834'}50%,59.99%{content:'\u2834\u2826'}
-  60%,69.99%{content:'\u2826\u2827'}70%,79.99%{content:'\u2827\u2807'}
-  80%,89.99%{content:'\u2807\u280F'}90%,100%{content:'\u280F\u280B'}
-}
-.dshAb_spin{animation:dshAb_spinFrames 1s steps(1,end) infinite}
-.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dshAb_time{flex:none;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
-.dshAb_empty{padding:10px 6px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px}
-/* The "show N more" row is a quiet text affordance: same inset and type as a
-   list line, so it reads as one more row rather than a control. */
-.dshAb_more{display:flex;align-items:center;box-sizing:border-box;width:100%;min-height:24px;padding:2px 6px 2px 25px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;text-align:left;cursor:pointer}
-@media (hover:hover){.dshAb_more:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}}
-.dshAb_more:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-@media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}.dshAb_spin{animation:none}}
+@media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}}
 `
 
     const ZH = {
@@ -249,6 +230,13 @@ window.__ModuleLoader__.load({
       done: '\uF0134',
       sleeping: '\uF04B2',
     }
+    /** Braille spinner frames, exactly the pair sequence agentbar cycles. */
+    const GLYPH_FRAMES = ['\u280B\u2819', '\u2819\u2839', '\u2839\u2838', '\u2838\u283C',
+      '\u283C\u2834', '\u2834\u2826', '\u2826\u2827', '\u2827\u2807',
+      '\u2807\u280F', '\u280F\u280B']
+    /** Cadence of one spinner frame; agentbar redraws on the same order. */
+    const SPINNER_INTERVAL_MS = 100
+
     /** Fallbacks that need no special font. */
     const FALLBACK = {
       attention: '?',
@@ -287,6 +275,34 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The two-cell braille spinner.
+     *
+     * The frames are swapped in JavaScript rather than by a CSS animation:
+     * `content` is not an animatable property in any current engine, so a
+     * keyframe sequence over it renders the first frame and stops. A timer
+     * advancing the index is the only way to get the character sequence
+     * agentbar draws. Two cells per frame also keeps the glyph an even width,
+     * so the title beside it never nudges sideways.
+     * @param props - the shared glyph attributes and whether a Nerd Font paints.
+     */
+    function Spinner({ common }) {
+      const [frame, setFrame] = useState(0)
+      useEffect(() => {
+        // Braille is ordinary Unicode, so the sequence runs without a Nerd
+        // Font; a reader who asked for reduced motion keeps the first frame.
+        const reduced = typeof window !== 'undefined'
+          && typeof window.matchMedia === 'function'
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        if (reduced) return undefined
+        const timer = setInterval(() => {
+          setFrame((value) => (value + 1) % GLYPH_FRAMES.length)
+        }, SPINNER_INTERVAL_MS)
+        return () => { clearInterval(timer) }
+      }, [])
+      return h('span', common, GLYPH_FRAMES[frame] ?? GLYPH_FRAMES[0])
+    }
+
+    /**
      * One status glyph, distinct in shape as well as color.
      * @param props - the row state.
      * @returns the agentbar glyph, or its no-special-font fallback.
@@ -300,10 +316,7 @@ window.__ModuleLoader__.load({
         'aria-hidden': true,
       }
       if (state === 'running') {
-        // The spinner's frames come from the stylesheet, so the element itself
-        // stays empty; the braille cells are ordinary Unicode and run
-        // everywhere, and a reduced-motion user keeps the first frame.
-        return h('span', { ...common, className: 'dshAb_glyph dshAb_spin' })
+        return h(Spinner, { common })
       }
       if (nerd) {
         const glyph = GLYPHS[state]

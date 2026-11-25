@@ -64,9 +64,13 @@ The glyphs are the ones `agentbar` uses, taken from its sidebar renderer:
 | Sleeping | `󰒲` (nf-md-sleep) | U+F04B2 | Yes |
 | Idle | `·` | U+00B7 | No |
 
-The spinner animates by swapping its two braille cells, which is how agentbar
-redraws it — not by fading opacity. It runs on any system, and reduced-motion
-users see the first frame held still.
+The spinner advances through those 10 frames on a 100 ms timer, the same
+cadence agentbar redraws at. It is driven by JavaScript, not CSS: `content` is
+not an animatable property in any current engine, so a `@keyframes` sequence
+over it renders the first frame and then stops. Each frame carries two braille
+cells so the glyph keeps an even width and the title beside it never nudges
+sideways. Braille is ordinary Unicode, so the spinner runs without a Nerd Font;
+a reader who asks for reduced motion keeps the first frame held still.
 
 The three Private Use Area glyphs render only when a Nerd Font is installed. The
 board **measures** whether they paint rather than trusting a family name: a
