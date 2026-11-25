@@ -3,9 +3,14 @@
  *
  * Occupies the sidebar's `sidebar.workspaces` seat — the whole browsing region
  * between the panel rows and the footer — and renders an agentbar-style live
- * board: three sections (needs you / running / recent), one compact row per
- * Session with a status glyph, the title, and a relative timestamp. Selecting
- * a row opens that Session.
+ * board: four sections (needs you / running / recent / sleeping), one compact
+ * row per Session with a status glyph, the title, and a relative timestamp.
+ * Selecting a row opens that Session.
+ *
+ * Sleep is time-based only: a Session with no pending interaction, no running
+ * work, and no update for `SLEEP_AFTER_MS` drops out of `recent` into
+ * `sleeping`, so a long tail of stale conversations does not push live ones
+ * off the panel.
  *
  * Rows come from `useSessions` and `useSessionStatus`, both already supplied by
  * the frame, so drawing the list retains no Session and reads no log.
@@ -20,9 +25,16 @@ window.__ModuleLoader__.load({
 
     const NS = 'agentBoard'
     /** Sections, in display order. */
-    const SECTIONS = ['attention', 'running', 'recent']
-    /** Idle Sessions shown in the `recent` section. */
-    const RECENT_LIMIT = 12
+    const SECTIONS = ['attention', 'running', 'recent', 'sleeping']
+    /** Rows shown per section before the "show more" row. */
+    const SECTION_LIMIT = 12
+    /**
+     * How long a Session may go without an update before it counts as
+     * sleeping. Twelve hours: long enough that a conversation you paused over
+     * lunch stays in `recent`, short enough that yesterday's work is out of
+     * the way. Change this one constant to move the threshold.
+     */
+    const SLEEP_AFTER_MS = 12 * 60 * 60 * 1000
 
     const ZERO = 'var(--dsh-content-font-delta,0px)'
     const SMALL = 'var(--dsh-content-font-size-secondary,13px)'
@@ -46,8 +58,10 @@ window.__ModuleLoader__.load({
 .dshAb_glyph[data-state=running]{color:var(--dsw-alias-state-business-primary)}
 .dshAb_glyph[data-state=done]{color:var(--dsw-alias-state-success-primary)}
 .dshAb_glyph[data-state=idle]{color:var(--dsw-alias-label-caption)}
+.dshAb_glyph[data-state=sleeping]{color:var(--dsw-alias-label-caption);opacity:.65}
 .dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dshAb_row[data-state=idle] .dshAb_name{color:var(--dsw-alias-label-secondary)}
+.dshAb_row[data-state=sleeping] .dshAb_name{color:var(--dsw-alias-label-tertiary)}
 .dshAb_time{flex:none;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
 .dshAb_empty{padding:10px 6px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px}
 .dshAb_more{width:100%;padding:3px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;text-align:left;cursor:pointer}
@@ -66,8 +80,10 @@ window.__ModuleLoader__.load({
       attention: '需操作',
       running: '运行中',
       recent: '最近',
+      sleeping: '睡眠',
       empty: '还没有会话',
       showMore: (n) => `再显示 ${n} 个`,
+      sleepingHint: '12 小时内无更新的会话',
       collapse: '折叠',
       expand: '展开',
       approval: '等待审批',
@@ -80,8 +96,10 @@ window.__ModuleLoader__.load({
       attention: 'Needs you',
       running: 'Running',
       recent: 'Recent',
+      sleeping: 'Sleeping',
       empty: 'No sessions yet',
       showMore: (n) => `Show ${n} more`,
+      sleepingHint: 'No update for 12 hours',
       collapse: 'Collapse',
       expand: 'Expand',
       approval: 'Waiting for approval',
@@ -111,9 +129,10 @@ window.__ModuleLoader__.load({
      * @param summary - the list row.
      * @param status - that Session's live UI status, when known.
      * @param t - active dictionary.
+     * @param now - epoch milliseconds sampled once per render.
      * @returns the row model the board renders.
      */
-    function entryOf(summary, status, t) {
+    function entryOf(summary, status, t, now) {
       if (summary.blank) return undefined
       if (summary.origin === 'subagent') return undefined
       const pending = status?.pendingInteraction
@@ -136,6 +155,11 @@ window.__ModuleLoader__.load({
       if (status?.completionUnread === true) {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
       }
+      // Only a quiet Session can sleep: pending interaction and running work
+      // returned above, so an approval never ages out of `attention`.
+      if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
+      }
       return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
     }
 
@@ -145,6 +169,7 @@ window.__ModuleLoader__.load({
       if (state === 'attention') return h('span', common, '?')
       if (state === 'done') return h('span', common, '\u2713')
       if (state === 'running') return h('span', { ...common, className: 'dshAb_glyph dshAb_pulse' }, '\u25CF')
+      if (state === 'sleeping') return h('span', common, '\u25CB')
       return h('span', common, '\u00B7')
     }
 
@@ -166,23 +191,26 @@ window.__ModuleLoader__.load({
       const statuses = useSessionStatus ? useSessionStatus((state) => state) : undefined
       const panelActive = usePanelInfo ? usePanelInfo((info) => info.activePanelId !== null) : false
       const [collapsed, setCollapsed] = useState({})
-      const [recentLimit, setRecentLimit] = useState(RECENT_LIMIT)
+      const [shownLimit, setShownLimit] = useState(SECTION_LIMIT)
 
       const groups = useMemo(() => {
+        const now = Date.now()
         const current = panelActive
           ? undefined
           : Object.values(list?.byId ?? {}).find((row) => (row.retainedBy?.mainView ?? 0) > 0)?.id
-        const buckets = { attention: [], running: [], recent: [] }
+        const buckets = { attention: [], running: [], recent: [], sleeping: [] }
         for (const id of list?.ids ?? []) {
           const summary = list.byId[id]
           if (summary === undefined) continue
-          const entry = entryOf(summary, statuses?.get?.(id), t)
+          const entry = entryOf(summary, statuses?.get?.(id), t, now)
           if (entry === undefined) continue
           if (entry.state === 'attention') buckets.attention.push(entry)
           else if (entry.state === 'running') buckets.running.push(entry)
+          else if (entry.state === 'sleeping') buckets.sleeping.push(entry)
           else buckets.recent.push(entry)
         }
         buckets.recent.sort((a, b) => b.time - a.time)
+        buckets.sleeping.sort((a, b) => b.time - a.time)
         return { current, buckets }
       }, [list, statuses, panelActive, t])
 
@@ -191,7 +219,7 @@ window.__ModuleLoader__.load({
         workspace?.(id)
       }
 
-      const total = groups.buckets.attention.length + groups.buckets.running.length + groups.buckets.recent.length
+      const total = SECTIONS.reduce((sum, state) => sum + groups.buckets[state].length, 0)
 
       // The collapsed rail keeps one dot per state that has members, so the
       // attention state is still visible without expanding the sidebar.
@@ -211,9 +239,10 @@ window.__ModuleLoader__.load({
             })))
       }
 
+      const paged = (state) => state === 'recent' || state === 'sleeping'
       const rowsFor = (state) => (collapsed[state] === true
         ? []
-        : groups.buckets[state].slice(0, state === 'recent' ? recentLimit : undefined))
+        : groups.buckets[state].slice(0, paged(state) ? shownLimit : undefined))
 
       const section = (state) => {
         const all = groups.buckets[state]
@@ -226,7 +255,9 @@ window.__ModuleLoader__.load({
             type: 'button',
             className: 'dshAb_head',
             'aria-expanded': isOpen,
-            title: isOpen ? t('collapse') : t('expand'),
+            // A long section says what its threshold is, so the rule behind
+            // the grouping is discoverable without reading the source.
+            title: state === 'sleeping' ? t('sleepingHint') : isOpen ? t('collapse') : t('expand'),
             onClick: () => { setCollapsed((prev) => ({ ...prev, [state]: isOpen })) },
           },
             h('svg', {
@@ -256,11 +287,11 @@ window.__ModuleLoader__.load({
             h(Glyph, { state: row.state }),
             h('span', { className: 'dshAb_name' }, row.title),
             h('span', { className: 'dshAb_time' }, relative(row.time)))),
-          state === 'recent' && hidden > 0
+          paged(state) && hidden > 0
             ? h('button', {
               type: 'button',
               className: 'dshAb_more',
-              onClick: () => { setRecentLimit((value) => value + RECENT_LIMIT) },
+              onClick: () => { setShownLimit((value) => value + SECTION_LIMIT) },
             }, t('showMore')(hidden))
             : null)
       }
