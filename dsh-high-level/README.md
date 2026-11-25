@@ -35,6 +35,38 @@ refusal is reported next to the icon you clicked.
 `/hl status` and `/hl model` answers render in the same panel with a neutral
 `/hl result` title, so they are never confused with a summary.
 
+## Looks
+
+![A high-level summary card under a finished reply: a blue-tinted panel with the detail line "4 lines · 1252 chars" and a collapsed five-line bullet body](docs/preview.webp)
+
+The card is tinted with the harness business blue (`--dsw-alias-state-business-primary`),
+mixed 9% into the theme's code-block surface, so it reads as its own panel beside
+the transcript without becoming a banner. The fill mixes into a theme surface
+token rather than `transparent`, so it stays opaque over anything that scrolls
+behind it, and both light and dark palettes derive their own weight from the
+same rule. A failed summary drops the tint and keeps the neutral surface, so the
+red body stays the only signal.
+
+The tint is one variable, `--dshHl-accent`. Unset, it takes the business accent;
+a theme or a host page may define it on any ancestor to recolor the card, and
+`--dshHl-surface` / `--dshHl-edge` override the fill and border directly:
+
+```css
+/* a stronger blue, scoped to one page or one theme */
+.dshHl_card { --dshHl-accent: var(--dsw-static-deepseek-400); }
+```
+
+To set it from somewhere other than the page, put the declaration in any
+stylesheet that reaches the card — a theme that ships CSS, a profile-level
+style, or a second tiny bundle that only injects a `<style>`. The card reads the
+variable off its own element, so nothing here needs editing.
+
+Small header text stays at 4.98:1 on the tinted fill in light mode (9.8:1 in
+dark) and body text far above both, so the panel needs no separate text color.
+The one step that sits below AA is the tertiary meta line (3.18:1, from 3.55:1
+on the neutral fill): it is de-emphasized metadata by design, and the tint costs
+it about a tenth of its contrast.
+
 ## What it costs and what it touches
 
 - Each card is one extra model request on the route the Session already uses,

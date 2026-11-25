@@ -28,12 +28,28 @@ window.__ModuleLoader__.load({
     const DURATION = /^\d+(?:\.\d+)?s$/u
 
     const CSS = `
-.dshHl_card{display:flex;flex-direction:column;box-sizing:border-box;width:100%;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-markdown-code-block);overflow:hidden}
+/* The card carries the harness business blue instead of the neutral code-block
+   fill, so a summary reads as its own surface beside the transcript. The tint
+   is mixed into the theme's own code-block token, never a literal color: light
+   and dark both keep their intended weight, and the blue follows the palette
+   the way every other accent in the app does.
+   --dshHl-accent is the one knob. Unset, it takes the business accent; a theme
+   or host page may define it on any ancestor to recolor the card without
+   touching this bundle. Percentages are tuned so the existing body and header
+   label steps keep their contrast on the tinted fill (>= 4.9:1 for the small
+   secondary text in light, higher in dark). */
+.dshHl_card{--dshHl-tint:var(--dshHl-accent,var(--dsw-alias-state-business-primary));--dshHl-surface:color-mix(in srgb, var(--dshHl-tint) 9%, var(--dsw-alias-markdown-code-block));--dshHl-edge:color-mix(in srgb, var(--dshHl-tint) 28%, transparent);display:flex;flex-direction:column;box-sizing:border-box;width:100%;border:.5px solid var(--dshHl-edge);border-radius:var(--dsw-radius-lg);background:var(--dshHl-surface);overflow:hidden}
+/* A failed summary keeps the neutral fill: the red body stays the only signal,
+   and an error card is never mistaken for a completed summary. The marker and
+   border take the error step so no blue survives on a failed card. */
+.dshHl_card[data-error]{--dshHl-tint:var(--dsw-alias-state-error-primary);--dshHl-surface:var(--dsw-alias-markdown-code-block);--dshHl-edge:var(--dsw-alias-border-l1)}
 .dshHl_head{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:none;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:${SMALL};line-height:calc(20px + ${ZERO});text-align:left;cursor:pointer}
 .dshHl_head[data-static]{cursor:default}
 @media (hover:hover){.dshHl_head:hover:not([data-static]){background:var(--dsw-alias-interactive-bg-hover)}}
 .dshHl_head:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.dshHl_badge{flex:none;width:2px;height:14px;border-radius:1px;background:var(--dsw-alias-brand-primary)}
+/* The leading rule repeats the fill's accent instead of the near-black (light)
+   brand step, which read as a neutral marker once the card itself is blue. */
+.dshHl_badge{flex:none;width:2px;height:14px;border-radius:1px;background:var(--dshHl-tint)}
 .dshHl_title{flex:none}
 .dshHl_meta{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary)}
 .dshHl_chevron{flex:none;width:12px;height:12px;transition:transform 120ms ease}
@@ -190,7 +206,7 @@ window.__ModuleLoader__.load({
 
       return h(React.Fragment, null,
         h('style', { 'data-high-level': '' }, CSS),
-        h('div', { className: 'dshHl_card' },
+        h('div', { className: 'dshHl_card', 'data-error': failed ? '' : undefined },
           head,
           bodyRows.length === 0 ? null : h('div',
             { className: 'dshHl_body', 'data-error': failed ? '' : undefined }, shown.join('\n')),
@@ -244,7 +260,7 @@ window.__ModuleLoader__.load({
         failure === null ? null : h('span', { className: 'dshHl_failure', role: 'status', title: failure }, failure))
     }
 
-    return {
+    const plugin = {
       inject: ['slots', 'remote', 'remote.commands', 'locale'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'high-level: dictionaries')
@@ -285,5 +301,11 @@ window.__ModuleLoader__.load({
         }, SummaryAction))
       },
     }
+
+    // Test seam: no browser is started here, so the stylesheet is asserted as
+    // text by `tests/high-level-css.test.mjs`.
+    if (globalThis.__DSH_HIGH_LEVEL_TEST__ === true) plugin.testing = { CSS, detailLine, ZH, EN }
+
+    return plugin
   },
 })
