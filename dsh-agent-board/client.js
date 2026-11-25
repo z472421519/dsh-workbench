@@ -48,6 +48,19 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Strength of the whole-row tint per state. The tint is the state color at
+     * this alpha, so the strip reads as colored without the text losing
+     * contrast. Set a state to 0 to keep its rows flat.
+     */
+    const TINTS = {
+      attention: 1,
+      running: 0.55,
+      done: 0.3,
+      idle: 1,
+      sleeping: 0.45,
+    }
+
+    /**
      * How long a Session may go without an update before it counts as
      * sleeping. Twelve hours: long enough that a conversation you paused over
      * lunch stays in `recent`, short enough that yesterday's work is out of
@@ -68,15 +81,20 @@ window.__ModuleLoader__.load({
 .dshAb_chevron{flex:none;width:8px;height:8px;transition:transform 120ms ease}
 .dshAb_chevron[data-open]{transform:rotate(90deg)}
 .dshAb_headCount{margin-left:auto;color:var(--dsw-alias-label-caption);font-weight:400}
-.dshAb_row{display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;min-height:28px;padding:4px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(18px + ${ZERO});text-align:left;cursor:pointer}
-@media (hover:hover){.dshAb_row:hover{background:var(--dsw-alias-interactive-bg-hover)}}
+.dshAb_row{position:relative;display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;min-height:28px;padding:4px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(18px + ${ZERO});text-align:left;cursor:pointer}
+/* The whole strip carries the state color as a low-alpha tint; the text keeps
+   its theme foreground, so contrast never depends on the accent. */
+.dshAb_row::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--dshAb-tint);opacity:calc(.12 * var(--dshAb-alpha,1));pointer-events:none;transition:opacity 120ms ease}
+@media (hover:hover){.dshAb_row:hover::before{opacity:calc(.2 * var(--dshAb-alpha,1))}}
+.dshAb_row[data-current]::before{opacity:calc(.22 * var(--dshAb-alpha,1))}
+/* Keep the glyph and labels above the tint layer. */
+.dshAb_row>span{position:relative;z-index:1}
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.dshAb_row[data-current]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
 .dshAb_glyph{flex:none;display:grid;place-items:center;width:12px;height:12px;font-size:10px;line-height:1}
 .dshAb_glyph[data-state=sleeping]{opacity:.6}
 .dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dshAb_row[data-state=idle] .dshAb_name{color:var(--dsw-alias-label-secondary)}
-.dshAb_row[data-state=sleeping] .dshAb_name{color:var(--dsw-alias-label-tertiary)}
+/* Sleeping rows recede by their tint alone; the title keeps its normal color
+   so a sleeping conversation still reads as a live link. */
 .dshAb_time{flex:none;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
 .dshAb_empty{padding:10px 6px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px}
 .dshAb_more{width:100%;padding:3px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;text-align:left;cursor:pointer}
@@ -301,6 +319,10 @@ window.__ModuleLoader__.load({
             key: row.id,
             'data-state': row.state,
             'data-current': row.id === groups.current ? '' : undefined,
+            style: {
+              '--dshAb-tint': COLORS[row.state] ?? COLORS.idle,
+              '--dshAb-alpha': String(TINTS[row.state] ?? 0.12),
+            },
             title: row.detail === '' ? row.title : `${row.title} — ${row.detail}`,
             onClick: () => { open(row.id) },
           },

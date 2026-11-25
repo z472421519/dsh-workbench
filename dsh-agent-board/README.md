@@ -33,7 +33,8 @@ Both long sections show 12 rows and offer a "show N more" row.
 
 | Element | Source |
 |---|---|
-| Glyph | `?` attention (amber), pulsing `●` running (green), `✓` finished turn (green), `·` idle (gray), `○` sleeping (gray, fainter) — shape carries the state, not only color |
+| Row tint | The whole strip takes the state color at low alpha, so a colored row is readable across the sidebar |
+| Glyph | `?` attention (amber), pulsing `●` running (green), `✓` finished turn (green), `·` idle (gray), `○` sleeping (gray) — shape carries the state, not only color |
 | Title | The Session's display title |
 | Time | Compact age of the last change (`3m`, `5h`, `3d`) |
 
@@ -66,6 +67,24 @@ Edit that table to re-map a state. Because these are theme tokens, the board
 follows light/dark and any brand override the deployment applies — literal hex
 values would not. The glyph shape stays the same whatever the color, so a state
 is never carried by color alone.
+
+Each row also paints that color across its full width as a low-alpha tint,
+controlled by `TINTS`:
+
+```js
+const TINTS = {
+  attention: 1,     // full strength
+  running:   0.55,  // lighter: a live row is background noise, not a call to act
+  done:      0.3,
+  idle:      1,
+  sleeping:  0.45,
+}
+```
+
+Set a state to `0` for no tint. The tint is separate from the text color on
+purpose: the labels keep the theme's foreground, so a tint can never make a row
+unreadable, and the tint opacity is `0.12 × TINTS[state]` (rising on hover and
+for the current row).
 
 `done` and `running` intentionally share green: both mean "nothing is waiting on
 you". The check glyph separates them. To split them, point `done` at another
