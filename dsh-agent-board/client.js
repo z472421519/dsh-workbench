@@ -64,27 +64,6 @@ window.__ModuleLoader__.load({
       sleeping: 'var(--dsw-alias-label-caption)',
     }
 
-    /**
-     * The monospace uppercase tag agentbar draws between the state icon and the
-     * title (`CX` in the reference).
-     *
-     * DSH exposes no "agent type" projection on a list row, and inventing a
-     * code per Session would be a fabrication, so the tag is derived from
-     * something the list really carries: the Session's working directory.
-     * Two leading alphanumerics of its basename, uppercased — `dsh-workbench`
-     * reads `DS`, `/tmp/probe` reads `PR`. A Session with no `cwd` gets no tag
-     * at all rather than a made-up one; the title simply starts at the next
-     * column.
-     * @param cwd - the Session's working directory, when the list carries one.
-     * @returns the two-character tag, or an empty string.
-     */
-    function tagOf(cwd) {
-      if (typeof cwd !== 'string') return ''
-      const segments = cwd.split(/[\\/]+/).filter((segment) => segment !== '')
-      const base = segments[segments.length - 1] ?? ''
-      const letters = base.replace(/[^0-9A-Za-z]/g, '').substring(0, 2)
-      return letters.toUpperCase()
-    }
 
     /**
      * How long a Session may go without an update before it counts as
@@ -113,30 +92,24 @@ window.__ModuleLoader__.load({
 /* One row: a full-width dark strip with a 4px state rail flush to its left
    edge, then icon, label, title, and the right-hand age. Square (2px) corners
    and a 1px bottom rule between rows, as in the agentbar reference. */
-.dshAb_row{position:relative;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:48px;padding:0 10px 0 16px;border:none;border-bottom:1px solid var(--dsw-alias-border-l1);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(20px + ${ZERO});text-align:left;cursor:pointer}
-/* Hover and current-row emphasis ride an overlay instead of recoloring the
-   strip, so the base fill stays one flat alias color per the reference. */
+.dshAb_row{position:relative;display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;min-height:30px;padding:4px 6px 4px 12px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(20px + ${ZERO});text-align:left;cursor:pointer}
 .dshAb_row::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--dsw-alias-interactive-bg-hover);opacity:0;pointer-events:none;transition:opacity 120ms ease}
 @media (hover:hover){.dshAb_row:hover::before{opacity:1}}
 .dshAb_row[data-current]::before{opacity:1}
-.dshAb_row:last-child{border-bottom:none}
-/* The 4px state rail spans the row's full height and sits flush left. */
-.dshAb_row::after{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--dshAb-tint);pointer-events:none}
+/* The only carried-over trait from the reference: a state-colored rail down
+   the leading edge. Everything else stays the host's own list look. */
+.dshAb_row::after{content:'';position:absolute;left:0;top:3px;bottom:3px;width:3px;border-radius:1.5px;background:var(--dshAb-tint);pointer-events:none}
 /* Keep the glyph and labels above both overlay layers. */
 .dshAb_row>span{position:relative;z-index:1}
 /* The title takes the free width and is the only part allowed to shrink; the
    time beside it keeps its intrinsic width so the column of ages stays aligned. */
-.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;line-height:20px;color:var(--dsw-alias-label-primary)}
+.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dshAb_time{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
 .dshAb_empty{padding:12px 8px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px;text-align:center}
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-/* State icon: 18px box in the state color, never shrinking. */
-.dshAb_glyph{flex:none;display:grid;place-items:center;width:18px;height:18px;font-size:18px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
+/* State icon in the state color, never shrinking. */
+.dshAb_glyph{flex:none;display:grid;place-items:center;width:14px;height:14px;font-size:12px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
 .dshAb_glyph[data-state=sleeping]{opacity:.6}
-/* The monospace uppercase tag in front of the title (agentbar's "CX"). The
-   reference draws it in cyan; the DSH palette ships no cyan alias, so the link
-   alias — the theme's cool information color — stands in. */
-.dshAb_tag{flex:none;color:var(--dsw-alias-link);font-family:var(--ds-font-family-code);font-size:12px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
 /* Collapsed 56px rail: one dot per state that has members. The dot needs a
    real box, or a color with no size paints nothing. */
 .dshAb_rail{display:flex;flex-direction:column;align-items:center;gap:6px;box-sizing:border-box;width:100%;padding:10px 0}
@@ -229,10 +202,10 @@ window.__ModuleLoader__.load({
             : pending.kind === 'plan-review'
               ? t('planReview')
               : t('attention')
-        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'attention', detail: label }
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'attention', detail: label }
       }
       if (status?.running === true || summary.running) {
-        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
       }
       // `completionUnread` is the only "a turn finished" evidence the client
       // holds: ui-session raises it when a Session it observed running stops,
@@ -243,7 +216,7 @@ window.__ModuleLoader__.load({
       // Sessions green. A Session in the main view has no completion marker at
       // all; it stays idle (or running) here rather than being guessed at.
       if (status?.completionUnread === true) {
-        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
       }
       // Age out last, on the only timestamp the list exposes. DSH defines
       // `summary.updatedAt` as `max(createdAt, lastPromptAt)` — the question
@@ -253,9 +226,9 @@ window.__ModuleLoader__.load({
       // drop into the archive the moment it lands. Only a Session with nothing
       // to report and no question in `SLEEP_AFTER_MS` sleeps.
       if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
-        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'sleeping', detail: '' }
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
       }
-      return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'idle', detail: '' }
+      return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
     }
 
     /**
@@ -519,7 +492,6 @@ window.__ModuleLoader__.load({
             onClick: () => { open(row.id) },
           },
             h(Glyph, { state: row.state }),
-            row.tag === '' ? null : h('span', { className: 'dshAb_tag' }, row.tag),
             h('span', { className: 'dshAb_name' }, row.title),
             h('span', { className: 'dshAb_time' }, relative(row.time)))))
       }
