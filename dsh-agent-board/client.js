@@ -120,6 +120,14 @@ window.__ModuleLoader__.load({
   80%,89.99%{content:'\u2807\u280F'}90%,100%{content:'\u280F\u280B'}
 }
 .dshAb_spin{animation:dshAb_spinFrames 1s steps(1,end) infinite}
+.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dshAb_time{flex:none;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+.dshAb_empty{padding:10px 6px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px}
+/* The "show N more" row is a quiet text affordance: same inset and type as a
+   list line, so it reads as one more row rather than a control. */
+.dshAb_more{display:flex;align-items:center;box-sizing:border-box;width:100%;min-height:24px;padding:2px 6px 2px 25px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;text-align:left;cursor:pointer}
+@media (hover:hover){.dshAb_more:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}}
+.dshAb_more:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 @media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}.dshAb_spin{animation:none}}
 `
 
