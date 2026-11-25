@@ -1,13 +1,23 @@
-# dsh-workbench
+# DSH Workbench
 
-Two bundles for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH).
-Each directory is a standalone DSH bundle: a `package.json` with a `dsh.bundle`
-patch, a Host half, and an optional browser half.
+English | [简体中文](README.zh-CN.md)
+
+Personal productivity plugins for DeepSeek Harness (DSH): a live Session status
+sidebar and on-demand response summaries.
+
+> **Unofficial, independently maintained.** This is a personal plugin collection,
+> not an official DeepSeek product or plugin bundle. It is not affiliated with or
+> endorsed by DeepSeek.
+
+![The Session board with needs-you, running and recent rows](docs/images/board-states.webp)
+
+Two independent plugins, maintained in one repository. No submodules; install
+either bundle or both from their subdirectories.
 
 | Bundle | What it does | Where it shows up |
 |---|---|---|
+| [`dsh-agent-board`](dsh-agent-board/README.md) | A live Session board modelled on the `agentbar` tmux sidebar | The left sidebar's browsing region, always visible |
 | [`dsh-high-level`](dsh-high-level/README.md) | `/hl` summarizes one assistant reply into 3–5 bullets | A card under that turn, plus a summary button in the message action row |
-| [`dsh-agent-board`](dsh-agent-board/README.md) | A live Session board, modelled on the `agentbar` tmux sidebar | The left sidebar's browsing region, always visible |
 
 ## Install
 

@@ -5,6 +5,12 @@ the local `agentbar` tmux sidebar: four sections, one compact row per Session
 with a status glyph, the title, and how long ago it changed. Selecting a row
 opens that Session.
 
+![The board with a pending question, a running Session and two recent rows](../docs/images/board-states.webp)
+
+*Purple bubble = needs you, blue dot grid = running, green check = turn finished,
+grey dot = idle. The state-colored bar down each row is the one trait borrowed
+from agentbar; the rest of the row keeps the host list look.*
+
 ## Where it appears
 
 It fills `sidebar.workspaces` — the whole region between the panel rows and the
@@ -33,14 +39,15 @@ that finished 13 hours ago is *Sleeping*, not *Recent*.
 **Sleeping starts folded.** The other three sections start expanded, and every
 section remembers its state for the lifetime of the panel.
 
-Each section lists at most 12 rows. The header count always states the true
-total, so a capped section still tells you how many it holds — there is no
-paging control.
+An expanded section renders **every** row it holds; the header count and the
+list agree. There is no row cap and no "show more" control — the sidebar hands
+the seat one scrolling viewport, so a cap would only make later rows
+unreachable, and *Needs you* is exactly where hiding a row costs the most.
 
 | Element | Source |
 |---|---|
 | Row tint | The whole strip takes the state color at low alpha, so a colored row is readable across the sidebar |
-| Glyph | `?` attention (amber), pulsing `●` running (green), `✓` finished turn (green), `·` idle (gray), `○` sleeping (gray) — shape carries the state, not only color |
+| Glyph | Needs you: comment bubble (violet). Running: dot grid / braille spinner (blue). Finished turn: circled check (green). Idle: `·`, sleeping: `○` (grey). Nerd Font icons fall back to `?` / `✓` / `○` when no local face loads |
 | Title | The Session's display title |
 | Time | Compact age of the last change (`3m`, `5h`, `3d`) |
 
@@ -85,7 +92,8 @@ family there if the probe misses it.
 
 ## Colors
 
-The palette follows `agentbar` rather than an amber/green traffic-light reading:
+The palette is taken from `agentbar/ui.py` (`LABELS` plus its curses color
+pairs), not from an amber/green traffic-light reading:
 
 | State | agentbar | Here |
 |---|---|---|
@@ -111,38 +119,24 @@ Everything except `attention` is a theme alias, so it follows light/dark and
 brand overrides. `attention` names a static step because the theme has no violet
 alias; it clears AA contrast on both sidebar backgrounds.
 
-Each row also paints that color across its full width as a low-alpha tint,
-controlled by `TINTS`:
-
-```js
-const TINTS = {
-  attention: 1,     // full strength
-  running:   0.55,  // lighter: a live row is background noise, not a call to act
-  done:      0.3,
-  idle:      1,
-  sleeping:  0.45,
-}
-```
-
-Set a state to `0` for no tint. The tint is separate from the text color on
-purpose: the labels keep the theme's foreground, so a tint can never make a row
-unreadable. The tint opacity is `0.2 × TINTS[state]`, rising on hover
-(`0.32 ×`) and for the current row (`0.36 ×`). Each row also carries a 3px bar
-in the state color on its leading edge, so the state stays visible even where a
-faint background wash would not register.
+Rows do **not** paint a full-width wash: the state color appears in the leading
+bar and in the glyph only, so the row keeps the host's own background and
+hover/selection behavior.
 
 ### How "done" is decided
 
-DSH's `completionUnread` is only raised for a Session **outside the main view**,
-so the conversation you are looking at could never show as done. The board
-therefore also counts a Session with a logged title as done: a title is written
-after a first turn completes, so it is the client-side evidence that this
-Session has finished at least one turn. A Session with no turn yet has no title
-and stays idle.
+DSH raises `completionUnread` when a Session it observed running stops, and only
+while that Session sits **outside the main view**. That is the board's only
+completion evidence.
 
-To go back to the amber/green reading, point `attention` at
-`--dsw-alias-state-warn-primary` and `running` at
-`--dsw-alias-state-success-primary`.
+A title is deliberately *not* treated as completion: DSH projects a title as
+soon as the first user message commits, so a turn that failed or was interrupted
+still carries one, and reading it as "done" painted failed Sessions green. The
+conversation you are looking at has no completion marker at all and stays idle
+or running rather than being guessed at.
+
+Sleep age is checked **after** the completion test, so a turn that ran past the
+12-hour threshold does not drop into *Sleeping* the moment it lands.
 
 ## Changing the sleep threshold
 
