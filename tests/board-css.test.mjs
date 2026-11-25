@@ -255,3 +255,27 @@ test('state colors follow agentbar: waiting is violet, done is green', () => {
   assert.match(attention[1], /violet|magenta/i, 'needs-you is the violet/magenta state')
   assert.match(done[1], /success/i, 'done is the green success state')
 })
+
+test('icons load through FontFace local() and never rely on a canvas probe', () => {
+  // A canvas measureText probe reads the fallback font, so it reports a width
+  // for both the icon code point and a known-missing one and can never tell
+  // them apart. FontFace.load() rejects when no local face exists instead.
+  // Strip comments first: the rationale for dropping the probe mentions it.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  assert.ok(!code.includes('measureText'), 'no canvas measurement in code')
+  assert.ok(!code.includes('hasNerdFont'), 'no boolean cache from a probe')
+  assert.match(source, /new FontFaceClass\(ICON_FAMILY, sources\)/)
+  assert.match(source, /local\("/, 'sources are local() references')
+  assert.ok(!/url\(["']?[^)]*\.(woff2?|ttf|otf)/.test(source), 'no bundled/remote font file')
+
+  // The family is claimed on the glyph only after the face loaded.
+  const glyph = source.slice(source.indexOf('function Glyph'))
+  assert.match(glyph, /iconFace === true \? \{ fontFamily:/)
+  assert.match(glyph, /iconFace === true\) \{\n\s+const glyph = GLYPHS\[state\]/, 'PUA glyphs require a loaded face')
+})
+
+test('the local face list matches families that actually exist on macOS', () => {
+  for (const family of ['MesloLGL Nerd Font', 'MesloLGLDZ Nerd Font', '0xProto Nerd Font']) {
+    assert.ok(source.includes(`'${family}'`), `missing known family ${family}`)
+  }
+})

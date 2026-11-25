@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
     const SMALL = 'var(--dsh-content-font-size-secondary,13px)'
 
     const CSS = `
-.dshAb_root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);--dshAb-nerd:'Symbols Nerd Font','Symbols Nerd Font Mono','Nerd Font Symbols','MesloLGS NF','MesloLGL Nerd Font','0xProto Nerd Font'}
+.dshAb_root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);--dshAb-nerd:'Symbols Nerd Font','Symbols Nerd Font Mono','MesloLGL Nerd Font','MesloLGM Nerd Font','MesloLGS Nerd Font','MesloLGLDZ Nerd Font','0xProto Nerd Font','JetBrainsMono Nerd Font','FiraCode Nerd Font'}
 .dshAb_scroll{display:flex;flex-direction:column;gap:10px;box-sizing:border-box;width:100%;height:100%;min-height:0;padding:4px 8px 12px;overflow-y:auto}
 /* Rows sit flush against each other: the separator is each row's own 1px
    bottom border, never a gap (a gap would let the sidebar background show
@@ -321,25 +321,37 @@ window.__ModuleLoader__.load({
      * wide reference distinguishes "a glyph in that cell" from "nothing there",
      * and a Nerd Font glyph is never wider than two Latin characters.
      */
-    let nerdFontState
-    function hasNerdFont() {
-      if (nerdFontState !== undefined) return nerdFontState
-      nerdFontState = false
+    /** Families probed with FontFace; a missing family rejects rather than
+     * silently measuring the fallback, which is what a canvas probe does. */
+    const FONT_FACES = [
+      'MesloLGL Nerd Font', 'MesloLGM Nerd Font', 'MesloLGS Nerd Font',
+      'MesloLGLDZ Nerd Font', '0xProto Nerd Font',
+      'JetBrainsMono Nerd Font', 'FiraCode Nerd Font',
+    ]
+    const ICON_FAMILY = 'DshBoardIcons'
+
+    /**
+     * Load a local Nerd Font and report whether an icon face is usable.
+     *
+     * `FontFace.load()` rejects when no listed `local()` source exists, so this
+     * distinguishes a real face from a fallback. A canvas `measureText` probe
+     * cannot: it measures whatever the fallback draws and reports a width for
+     * both the icon and a known-missing code point.
+     * @param FontFaceClass - the page's FontFace constructor.
+     * @param fonts - `document.fonts`, when present.
+     * @returns the installed face, or null when no icon font is available.
+     */
+    async function loadIconFace(FontFaceClass, fonts) {
+      if (typeof FontFaceClass !== 'function' || fonts === undefined) return null
+      const sources = FONT_FACES.map((family) => `local("${family}")`).join(', ')
       try {
-        const canvas = document.createElement('canvas')
-        const context = canvas.getContext('2d')
-        if (context === null) return nerdFontState
-        const pua = String.fromCodePoint(0xF0134)
-        context.font = '32px monospace'
-        const notdef = context.measureText(pua).width
-        // Compare against a box drawn with a known-missing code point in the
-        // same cell: identical widths mean both are the fallback box.
-        const missing = context.measureText(String.fromCodePoint(0x10FFFD)).width
-        nerdFontState = notdef > 0 && notdef !== missing
+        const face = new FontFaceClass(ICON_FAMILY, sources)
+        await face.load()
+        fonts.add(face)
+        return face
       } catch {
-        nerdFontState = false
+        return null
       }
-      return nerdFontState
     }
 
     /**
@@ -375,18 +387,21 @@ window.__ModuleLoader__.load({
      * @param props - the row state.
      * @returns the agentbar glyph, or its no-special-font fallback.
      */
-    function Glyph({ state }) {
-      const nerd = hasNerdFont()
+    function Glyph({ state, iconFace }) {
       const common = {
         className: 'dshAb_glyph',
         'data-state': state,
-        style: { color: COLORS[state] ?? COLORS.idle },
+        style: {
+          color: COLORS[state] ?? COLORS.idle,
+          // Only claim the icon family once FontFace actually loaded it.
+          ...(iconFace === true ? { fontFamily: `${ICON_FAMILY}, monospace` } : {}),
+        },
         'aria-hidden': true,
       }
       if (state === 'running') {
         return h(Spinner, { common })
       }
-      if (nerd) {
+      if (iconFace === true) {
         const glyph = GLYPHS[state]
         if (glyph !== undefined) return h('span', common, glyph)
       }
@@ -416,6 +431,22 @@ window.__ModuleLoader__.load({
       // Sections that start folded. Sleeping is an archive, not something to
       // scan on every glance, so it costs one header until you open it.
       const [collapsed, setCollapsed] = useState({ sleeping: true })
+      // Icon glyphs render only after the local face is confirmed usable; until
+      // then the Unicode fallbacks keep the board readable.
+      const [iconFace, setIconFace] = useState(false)
+      useEffect(() => {
+        let live = true
+        let installed
+        void loadIconFace(window.FontFace, document.fonts).then((face) => {
+          if (!live || face === null) return
+          installed = face
+          setIconFace(true)
+        })
+        return () => {
+          live = false
+          if (installed !== undefined && document.fonts?.delete !== undefined) document.fonts.delete(installed)
+        }
+      }, [])
 
 
       const groups = useMemo(() => {
@@ -497,7 +528,7 @@ window.__ModuleLoader__.load({
             title: row.detail === '' ? row.title : `${row.title} — ${row.detail}`,
             onClick: () => { open(row.id) },
           },
-            h(Glyph, { state: row.state }),
+            h(Glyph, { state: row.state, iconFace }),
             h('span', { className: 'dshAb_name' }, row.title),
             h('span', { className: 'dshAb_time' }, relative(row.time)))))
       }
@@ -578,7 +609,7 @@ window.__ModuleLoader__.load({
     // without a renderer. Off by default, so the object the Host loads keeps
     // exactly the two keys a Cordis plugin declares.
     if (globalThis.__DSH_AGENT_BOARD_TEST__ === true) {
-      plugin.testing = { entryOf, bucketOf, rowsFor, CSS, SLEEP_AFTER_MS }
+      plugin.testing = { entryOf, bucketOf, rowsFor, CSS, SLEEP_AFTER_MS, loadIconFace, ICON_FAMILY, FONT_FACES, GLYPHS }
     }
 
     return plugin
