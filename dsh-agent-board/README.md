@@ -21,7 +21,7 @@ button. Disable the plugin to get that browser back.
 |---|---|
 | Needs you | The Session has a pending interaction (approval, question, plan review) |
 | Running | The Session has live work |
-| Recent | Quiet Sessions updated within the last 12 hours, newest first |
+| Recent | Quiet Sessions updated within the last 12 hours, newest first — a Session whose turn finished shows a green check here |
 | Sleeping | Quiet Sessions with no update for 12 hours or more |
 
 The four sections are evaluated in that order, so **state outranks age**: an
@@ -91,8 +91,19 @@ const TINTS = {
 
 Set a state to `0` for no tint. The tint is separate from the text color on
 purpose: the labels keep the theme's foreground, so a tint can never make a row
-unreadable, and the tint opacity is `0.12 × TINTS[state]` (rising on hover and
-for the current row).
+unreadable. The tint opacity is `0.2 × TINTS[state]`, rising on hover
+(`0.32 ×`) and for the current row (`0.36 ×`). Each row also carries a 3px bar
+in the state color on its leading edge, so the state stays visible even where a
+faint background wash would not register.
+
+### How "done" is decided
+
+DSH's `completionUnread` is only raised for a Session **outside the main view**,
+so the conversation you are looking at could never show as done. The board
+therefore also counts a Session with a logged title as done: a title is written
+after a first turn completes, so it is the client-side evidence that this
+Session has finished at least one turn. A Session with no turn yet has no title
+and stays idle.
 
 To go back to the amber/green reading, point `attention` at
 `--dsw-alias-state-warn-primary` and `running` at

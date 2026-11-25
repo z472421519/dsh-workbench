@@ -69,10 +69,10 @@ window.__ModuleLoader__.load({
      */
     const TINTS = {
       attention: 1,
-      running: 0.55,
-      done: 0.3,
-      idle: 1,
-      sleeping: 0.45,
+      running: 0.8,
+      done: 0.65,
+      idle: 0.8,
+      sleeping: 0.4,
     }
 
     /**
@@ -99,10 +99,12 @@ window.__ModuleLoader__.load({
 .dshAb_row{position:relative;display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;min-height:28px;padding:4px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(18px + ${ZERO});text-align:left;cursor:pointer}
 /* The whole strip carries the state color as a low-alpha tint; the text keeps
    its theme foreground, so contrast never depends on the accent. */
-.dshAb_row::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--dshAb-tint);opacity:calc(.12 * var(--dshAb-alpha,1));pointer-events:none;transition:opacity 120ms ease}
-@media (hover:hover){.dshAb_row:hover::before{opacity:calc(.2 * var(--dshAb-alpha,1))}}
-.dshAb_row[data-current]::before{opacity:calc(.22 * var(--dshAb-alpha,1))}
+.dshAb_row::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--dshAb-tint);opacity:calc(.2 * var(--dshAb-alpha,1));pointer-events:none;transition:opacity 120ms ease}
+@media (hover:hover){.dshAb_row:hover::before{opacity:calc(.32 * var(--dshAb-alpha,1))}}
+.dshAb_row[data-current]::before{opacity:calc(.36 * var(--dshAb-alpha,1))}
 /* Keep the glyph and labels above the tint layer. */
+/* A 3px rail in the state color carries the state where a faint tint cannot. */
+.dshAb_row::after{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--dshAb-tint);opacity:var(--dshAb-alpha,1);pointer-events:none}
 .dshAb_row>span{position:relative;z-index:1}
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 .dshAb_glyph{flex:none;display:grid;place-items:center;width:12px;height:12px;font-size:10px;line-height:1}
@@ -199,6 +201,15 @@ window.__ModuleLoader__.load({
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
       }
       if (status?.completionUnread === true) {
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
+      }
+      // `completionUnread` is only raised for a Session outside the main view
+      // (see ui-session's observeRunning), so the conversation you are looking
+      // at could never show as done. Reading a logged title is the client-side
+      // evidence that this Session has completed at least one turn, which is
+      // the fact a board row wants; it stays exact because a Session with no
+      // turn has no title yet.
+      if (summary.title !== undefined && summary.title.trim() !== '') {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
       }
       // Only a quiet Session can sleep: pending interaction and running work
