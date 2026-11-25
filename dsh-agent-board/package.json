@@ -43,7 +43,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/OWNER/REPO.git",
+    "url": "https://github.com/z472421519/dsh-workbench.git",
     "directory": "dsh-agent-board"
+  },
+  "author": {
+    "name": "z472421519",
+    "email": "z472421519@163.com"
   }
 }

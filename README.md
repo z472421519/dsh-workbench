@@ -1,4 +1,4 @@
-# dsh-plugins
+# dsh-workbench
 
 Two bundles for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH).
 Each directory is a standalone DSH bundle: a `package.json` with a `dsh.bundle`
@@ -15,7 +15,7 @@ Both are local-directory bundles. Nothing is published to a registry, so install
 by pointing DSH at the directory.
 
 **From the app.** Open **Plugins**, choose **Add plugin**, and pick the bundle
-directory (for example `dsh-plugins/dsh-agent-board`).
+directory (for example `dsh-workbench/dsh-agent-board`).
 
 **With the agent.** Ask DSH to install the bundle, or run the equivalent
 `plugin_manager` call with `action: install_bundle` and the absolute directory
