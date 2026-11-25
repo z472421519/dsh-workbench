@@ -52,6 +52,31 @@ board degrades to one dot per active state, so a pending approval still shows.
 pending-interaction state), both already supplied to the seat. No Session is
 opened or retained to draw a row, no log is read, and no model request is made.
 
+## Glyphs
+
+The glyphs are the ones `agentbar` uses, taken from its sidebar renderer:
+
+| State | Glyph | Code point | Needs a Nerd Font |
+|---|---|---|---|
+| Running | braille spinner `` ⠋⠙ `` cycling through 10 frames | U+280B… | No — ordinary Unicode |
+| Needs you | `` (nf-fa-comment) | U+F075 | Yes |
+| Done | `󰄴` (nf-md-check_circle) | U+F0134 | Yes |
+| Sleeping | `󰒲` (nf-md-sleep) | U+F04B2 | Yes |
+| Idle | `·` | U+00B7 | No |
+
+The spinner animates by swapping its two braille cells, which is how agentbar
+redraws it — not by fading opacity. It runs on any system, and reduced-motion
+users see the first frame held still.
+
+The three Private Use Area glyphs render only when a Nerd Font is installed. The
+board **measures** whether they paint rather than trusting a family name: a
+missing glyph falls back to a box that is wider than two Latin characters, so a
+canvas measurement distinguishes the two. Without a Nerd Font the board falls
+back to `?`, `✓`, and `○`, which are the shapes it used before — no tofu boxes.
+
+Nerd Font families are listed in `--dshAb-nerd` on the board root. Add your own
+family there if the probe misses it.
+
 ## Colors
 
 The palette follows `agentbar` rather than an amber/green traffic-light reading:

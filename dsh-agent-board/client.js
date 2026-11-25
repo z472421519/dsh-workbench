@@ -87,7 +87,7 @@ window.__ModuleLoader__.load({
     const SMALL = 'var(--dsh-content-font-size-secondary,13px)'
 
     const CSS = `
-.dshAb_root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary)}
+.dshAb_root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);--dshAb-nerd:'Symbols Nerd Font','Symbols Nerd Font Mono','Nerd Font Symbols','MesloLGS NF','MesloLGL Nerd Font','0xProto Nerd Font'}
 .dshAb_scroll{display:flex;flex-direction:column;gap:10px;box-sizing:border-box;width:100%;height:100%;min-height:0;padding:4px 8px 12px;overflow-y:auto}
 .dshAb_section{display:flex;flex-direction:column;gap:1px;flex:none}
 .dshAb_head{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;padding:4px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;text-align:left;cursor:pointer}
@@ -107,21 +107,20 @@ window.__ModuleLoader__.load({
 .dshAb_row::after{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--dshAb-tint);opacity:var(--dshAb-alpha,1);pointer-events:none}
 .dshAb_row>span{position:relative;z-index:1}
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.dshAb_glyph{flex:none;display:grid;place-items:center;width:12px;height:12px;font-size:10px;line-height:1}
+.dshAb_glyph{flex:none;display:grid;place-items:center;width:14px;height:14px;font-size:12px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
 .dshAb_glyph[data-state=sleeping]{opacity:.6}
-.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Sleeping rows recede by their tint alone; the title keeps its normal color
-   so a sleeping conversation still reads as a live link. */
-.dshAb_time{flex:none;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
-.dshAb_empty{padding:10px 6px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px}
-.dshAb_more{width:100%;padding:3px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;text-align:left;cursor:pointer}
-@media (hover:hover){.dshAb_more:hover{color:var(--dsw-alias-label-secondary)}}
-.dshAb_more:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.dshAb_rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0}
-.dshAb_railDot{width:6px;height:6px;border-radius:50%}
-.dshAb_pulse{animation:dshAb_pulse 1.4s ease-in-out infinite}
-@keyframes dshAb_pulse{0%,100%{opacity:1}50%{opacity:.35}}
-@media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}}
+/* The braille spinner swaps its two cells frame by frame, the way agentbar
+   redraws it, instead of fading opacity. */
+.dshAb_spin::before{content:'\u280B\u2819'}
+@keyframes dshAb_spinFrames{
+  0%,9.99%{content:'\u280B\u2819'}10%,19.99%{content:'\u2819\u2839'}
+  20%,29.99%{content:'\u2839\u2838'}30%,39.99%{content:'\u2838\u283C'}
+  40%,49.99%{content:'\u283C\u2834'}50%,59.99%{content:'\u2834\u2826'}
+  60%,69.99%{content:'\u2826\u2827'}70%,79.99%{content:'\u2827\u2807'}
+  80%,89.99%{content:'\u2807\u280F'}90%,100%{content:'\u280F\u280B'}
+}
+.dshAb_spin{animation:dshAb_spinFrames 1s steps(1,end) infinite}
+@media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}.dshAb_spin{animation:none}}
 `
 
     const ZH = {
@@ -230,18 +229,81 @@ window.__ModuleLoader__.load({
       return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
     }
 
-    /** One status glyph, distinct in shape as well as color. */
+    /**
+     * Agentbar's own glyph set, from `agentbar-rs`'s sidebar renderer:
+     * `nf-fa-comment` while waiting on you, `nf-md-check_circle` when done,
+     * `nf-md-sleep` for a stale Session, and a braille spinner while working.
+     * The first three live in the Private Use Area and render only when a Nerd
+     * Font is installed; the braille spinner is ordinary Unicode.
+     */
+    const GLYPHS = {
+      attention: '\uF075',
+      done: '\uF0134',
+      sleeping: '\uF04B2',
+    }
+    /** Fallbacks that need no special font. */
+    const FALLBACK = {
+      attention: '?',
+      done: '\u2713',
+      sleeping: '\u25CB',
+      running: '\u25CF',
+    }
+
+    /**
+     * Whether the private-use glyphs actually paint in this browser.
+     *
+     * A family name is not evidence: an uninstalled font silently falls back to
+     * a tofu box or a zero-width box. Measuring a PUA code point against a
+     * wide reference distinguishes "a glyph in that cell" from "nothing there",
+     * and a Nerd Font glyph is never wider than two Latin characters.
+     */
+    let nerdFontState
+    function hasNerdFont() {
+      if (nerdFontState !== undefined) return nerdFontState
+      nerdFontState = false
+      try {
+        const canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d')
+        if (context === null) return nerdFontState
+        const pua = String.fromCodePoint(0xF0134)
+        context.font = '32px monospace'
+        const notdef = context.measureText(pua).width
+        // Compare against a box drawn with a known-missing code point in the
+        // same cell: identical widths mean both are the fallback box.
+        const missing = context.measureText(String.fromCodePoint(0x10FFFD)).width
+        nerdFontState = notdef > 0 && notdef !== missing
+      } catch {
+        nerdFontState = false
+      }
+      return nerdFontState
+    }
+
+    /**
+     * One status glyph, distinct in shape as well as color.
+     * @param props - the row state.
+     * @returns the agentbar glyph, or its no-special-font fallback.
+     */
     function Glyph({ state }) {
+      const nerd = hasNerdFont()
       const common = {
         className: 'dshAb_glyph',
         'data-state': state,
         style: { color: COLORS[state] ?? COLORS.idle },
         'aria-hidden': true,
       }
-      if (state === 'attention') return h('span', common, '?')
-      if (state === 'done') return h('span', common, '\u2713')
-      if (state === 'running') return h('span', { ...common, className: 'dshAb_glyph dshAb_pulse' }, '\u25CF')
-      if (state === 'sleeping') return h('span', common, '\u25CB')
+      if (state === 'running') {
+        // The spinner's frames come from the stylesheet, so the element itself
+        // stays empty; the braille cells are ordinary Unicode and run
+        // everywhere, and a reduced-motion user keeps the first frame.
+        return h('span', { ...common, className: 'dshAb_glyph dshAb_spin' })
+      }
+      if (nerd) {
+        const glyph = GLYPHS[state]
+        if (glyph !== undefined) return h('span', common, glyph)
+      }
+      if (state === 'attention') return h('span', common, FALLBACK.attention)
+      if (state === 'done') return h('span', common, FALLBACK.done)
+      if (state === 'sleeping') return h('span', common, FALLBACK.sleeping)
       return h('span', common, '\u00B7')
     }
 
