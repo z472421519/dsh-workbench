@@ -130,7 +130,7 @@ window.__ModuleLoader__.load({
       recent: '最近',
       sleeping: '睡眠',
       empty: '还没有会话',
-      showMore: (n) => `再显示 ${n} 个`,
+      showMore: '再显示 {n} 个',
       sleepingHint: '12 小时内无更新的会话',
       collapse: '折叠',
       expand: '展开',
@@ -146,7 +146,7 @@ window.__ModuleLoader__.load({
       recent: 'Recent',
       sleeping: 'Sleeping',
       empty: 'No sessions yet',
-      showMore: (n) => `Show ${n} more`,
+      showMore: 'Show {n} more',
       sleepingHint: 'No update for 12 hours',
       collapse: 'Collapse',
       expand: 'Expand',
@@ -155,6 +155,16 @@ window.__ModuleLoader__.load({
       planReview: 'Waiting for a plan review',
       runningLabel: 'Running',
       doneLabel: 'Done',
+    }
+
+    /**
+     * Substitute the single `{n}` placeholder a count label carries.
+     * @param template - localized label.
+     * @param value - the count.
+     * @returns the label with the count filled in.
+     */
+    function fill(template, value) {
+      return typeof template === 'string' ? template.replace('{n}', String(value)) : String(value)
     }
 
     /**
@@ -200,22 +210,22 @@ window.__ModuleLoader__.load({
       if (status?.running === true || summary.running) {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
       }
+      // Age out before the finished/idle split: pending interaction and running
+      // work returned above, so an approval never ages into `sleeping`, while a
+      // quiet Session always does once it has been still long enough.
+      if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
+      }
       if (status?.completionUnread === true) {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
       }
       // `completionUnread` is only raised for a Session outside the main view
       // (see ui-session's observeRunning), so the conversation you are looking
       // at could never show as done. Reading a logged title is the client-side
-      // evidence that this Session has completed at least one turn, which is
-      // the fact a board row wants; it stays exact because a Session with no
-      // turn has no title yet.
+      // evidence that this Session has completed at least one turn; it stays
+      // exact because a Session with no turn has no title yet.
       if (summary.title !== undefined && summary.title.trim() !== '') {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
-      }
-      // Only a quiet Session can sleep: pending interaction and running work
-      // returned above, so an approval never ages out of `attention`.
-      if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
       }
       return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
     }
@@ -252,7 +262,9 @@ window.__ModuleLoader__.load({
       const list = useSessions ? useSessions((state) => state) : undefined
       const statuses = useSessionStatus ? useSessionStatus((state) => state) : undefined
       const panelActive = usePanelInfo ? usePanelInfo((info) => info.activePanelId !== null) : false
-      const [collapsed, setCollapsed] = useState({})
+      // Sections that start folded. Sleeping is an archive, not something to
+      // scan on every glance, so it costs one header until you open it.
+      const [collapsed, setCollapsed] = useState({ sleeping: true })
       const [shownLimit, setShownLimit] = useState(SECTION_LIMIT)
 
       const groups = useMemo(() => {
@@ -360,7 +372,7 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'dshAb_more',
               onClick: () => { setShownLimit((value) => value + SECTION_LIMIT) },
-            }, t('showMore')(hidden))
+            }, fill(t('showMore'), hidden))
             : null)
       }
 

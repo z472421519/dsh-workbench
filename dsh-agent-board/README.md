@@ -22,12 +22,16 @@ button. Disable the plugin to get that browser back.
 | Needs you | The Session has a pending interaction (approval, question, plan review) |
 | Running | The Session has live work |
 | Recent | Quiet Sessions updated within the last 12 hours, newest first — a Session whose turn finished shows a green check here |
-| Sleeping | Quiet Sessions with no update for 12 hours or more |
+| Sleeping | Quiet Sessions with no update for 12 hours or more — **folded by default**, so it costs one header until you open it |
 
 The four sections are evaluated in that order, so **state outranks age**: an
 approval left pending for two days stays in *Needs you*, and a long-running turn
 stays in *Running*. Only a Session with nothing pending and no live work can
-fall asleep.
+fall asleep, and age is checked before the finished/idle split — so a Session
+that finished 13 hours ago is *Sleeping*, not *Recent*.
+
+**Sleeping starts folded.** The other three sections start expanded, and every
+section remembers its state for the lifetime of the panel.
 
 Both long sections show 12 rows and offer a "show N more" row.
 
