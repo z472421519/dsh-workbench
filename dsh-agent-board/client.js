@@ -29,17 +29,32 @@ window.__ModuleLoader__.load({
     /** Rows shown per section before the "show more" row. */
     const SECTION_LIMIT = 12
     /**
-     * Colors per state. Every value is a Harness theme token, so the board
-     * follows light/dark and any brand override the deployment applies. Edit
-     * here to re-map a state; the glyph shape stays the same, so a state is
-     * never carried by color alone.
+     * Colors per state, following the agentbar palette rather than the
+     * amber/green "traffic light" reading:
+     *
+     * | state     | agentbar              | here                        |
+     * | --------- | --------------------- | --------------------------- |
+     * | working   | cyan (`palette.info`) | business blue — no cyan     |
+     * | waiting   | magenta (`accent`)    | violet                      |
+     * | done      | green (`success`)     | green                       |
+     * | idle      | white / dimmed        | gray                        |
+     * | stale     | dimmed + sleep glyph  | gray, fainter               |
+     *
+     * Every value is still a theme token, so light/dark and brand overrides
+     * apply. Two substitutions: the DSH palette ships no cyan family (so the
+     * business accent stands in for agentbar's cyan) and no violet alias (so
+     * one static step is named directly).
      */
     const COLORS = {
-      /** Waiting on the human: amber. */
-      attention: 'var(--dsw-alias-state-warn-primary)',
-      /** Live work: green. */
-      running: 'var(--dsw-alias-state-success-primary)',
-      /** A finished turn: the same green, distinguished by its check glyph. */
+      /**
+       * Waiting on the human: violet. The theme has no violet alias, so this is
+       * the one hard-coded static step; it clears AA on both sidebar
+       * backgrounds.
+       */
+      attention: 'var(--dsw-static-violet-400)',
+      /** Live work: the business accent, so it follows light/dark like every alias. */
+      running: 'var(--dsw-alias-state-business-primary)',
+      /** A finished turn: green. */
       done: 'var(--dsw-alias-state-success-primary)',
       /** Quiet: gray. */
       idle: 'var(--dsw-alias-label-caption)',

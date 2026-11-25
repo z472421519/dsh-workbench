@@ -50,23 +50,31 @@ opened or retained to draw a row, no log is read, and no model request is made.
 
 ## Colors
 
-Every state maps to one Harness theme token in the `COLORS` table at the top of
-`client.js`:
+The palette follows `agentbar` rather than an amber/green traffic-light reading:
+
+| State | agentbar | Here |
+|---|---|---|
+| Running | cyan (`palette.info`) | the business accent (blue) — the DSH palette ships no cyan |
+| Needs you | magenta (`palette.accent`) | violet (`--dsw-static-violet-400`) |
+| Done | green (`palette.success`) | green |
+| Idle | dimmed | gray |
+| Sleeping | dimmed + sleep glyph | the same gray, painted fainter |
+
+All of it lives in `COLORS` at the top of `client.js`:
 
 ```js
 const COLORS = {
-  attention: 'var(--dsw-alias-state-warn-primary)',    // amber
-  running:   'var(--dsw-alias-state-success-primary)', // green
-  done:      'var(--dsw-alias-state-success-primary)', // green
-  idle:      'var(--dsw-alias-label-caption)',         // gray
-  sleeping:  'var(--dsw-alias-label-caption)',         // gray, drawn fainter
+  attention: 'var(--dsw-static-violet-400)',
+  running:   'var(--dsw-alias-state-business-primary)',
+  done:      'var(--dsw-alias-state-success-primary)',
+  idle:      'var(--dsw-alias-label-caption)',
+  sleeping:  'var(--dsw-alias-label-caption)',
 }
 ```
 
-Edit that table to re-map a state. Because these are theme tokens, the board
-follows light/dark and any brand override the deployment applies — literal hex
-values would not. The glyph shape stays the same whatever the color, so a state
-is never carried by color alone.
+Everything except `attention` is a theme alias, so it follows light/dark and
+brand overrides. `attention` names a static step because the theme has no violet
+alias; it clears AA contrast on both sidebar backgrounds.
 
 Each row also paints that color across its full width as a low-alpha tint,
 controlled by `TINTS`:
@@ -86,10 +94,9 @@ purpose: the labels keep the theme's foreground, so a tint can never make a row
 unreadable, and the tint opacity is `0.12 × TINTS[state]` (rising on hover and
 for the current row).
 
-`done` and `running` intentionally share green: both mean "nothing is waiting on
-you". The check glyph separates them. To split them, point `done` at another
-token, for example `--dsw-alias-label-secondary` for a neutral, or
-`--dsw-alias-state-business-primary` for the shipped blue.
+To go back to the amber/green reading, point `attention` at
+`--dsw-alias-state-warn-primary` and `running` at
+`--dsw-alias-state-success-primary`.
 
 ## Changing the sleep threshold
 
