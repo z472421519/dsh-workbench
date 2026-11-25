@@ -29,6 +29,25 @@ window.__ModuleLoader__.load({
     /** Rows shown per section before the "show more" row. */
     const SECTION_LIMIT = 12
     /**
+     * Colors per state. Every value is a Harness theme token, so the board
+     * follows light/dark and any brand override the deployment applies. Edit
+     * here to re-map a state; the glyph shape stays the same, so a state is
+     * never carried by color alone.
+     */
+    const COLORS = {
+      /** Waiting on the human: amber. */
+      attention: 'var(--dsw-alias-state-warn-primary)',
+      /** Live work: green. */
+      running: 'var(--dsw-alias-state-success-primary)',
+      /** A finished turn: the same green, distinguished by its check glyph. */
+      done: 'var(--dsw-alias-state-success-primary)',
+      /** Quiet: gray. */
+      idle: 'var(--dsw-alias-label-caption)',
+      /** Quiet and old: the same gray, drawn fainter. */
+      sleeping: 'var(--dsw-alias-label-caption)',
+    }
+
+    /**
      * How long a Session may go without an update before it counts as
      * sleeping. Twelve hours: long enough that a conversation you paused over
      * lunch stays in `recent`, short enough that yesterday's work is out of
@@ -54,11 +73,7 @@ window.__ModuleLoader__.load({
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 .dshAb_row[data-current]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
 .dshAb_glyph{flex:none;display:grid;place-items:center;width:12px;height:12px;font-size:10px;line-height:1}
-.dshAb_glyph[data-state=attention]{color:var(--dsw-alias-state-warn-primary)}
-.dshAb_glyph[data-state=running]{color:var(--dsw-alias-state-business-primary)}
-.dshAb_glyph[data-state=done]{color:var(--dsw-alias-state-success-primary)}
-.dshAb_glyph[data-state=idle]{color:var(--dsw-alias-label-caption)}
-.dshAb_glyph[data-state=sleeping]{color:var(--dsw-alias-label-caption);opacity:.65}
+.dshAb_glyph[data-state=sleeping]{opacity:.6}
 .dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dshAb_row[data-state=idle] .dshAb_name{color:var(--dsw-alias-label-secondary)}
 .dshAb_row[data-state=sleeping] .dshAb_name{color:var(--dsw-alias-label-tertiary)}
@@ -68,9 +83,7 @@ window.__ModuleLoader__.load({
 @media (hover:hover){.dshAb_more:hover{color:var(--dsw-alias-label-secondary)}}
 .dshAb_more:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 .dshAb_rail{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0}
-.dshAb_railDot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-caption)}
-.dshAb_railDot[data-state=attention]{background:var(--dsw-alias-state-warn-primary)}
-.dshAb_railDot[data-state=running]{background:var(--dsw-alias-state-business-primary)}
+.dshAb_railDot{width:6px;height:6px;border-radius:50%}
 .dshAb_pulse{animation:dshAb_pulse 1.4s ease-in-out infinite}
 @keyframes dshAb_pulse{0%,100%{opacity:1}50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}}
@@ -165,7 +178,12 @@ window.__ModuleLoader__.load({
 
     /** One status glyph, distinct in shape as well as color. */
     function Glyph({ state }) {
-      const common = { className: 'dshAb_glyph', 'data-state': state, 'aria-hidden': true }
+      const common = {
+        className: 'dshAb_glyph',
+        'data-state': state,
+        style: { color: COLORS[state] ?? COLORS.idle },
+        'aria-hidden': true,
+      }
       if (state === 'attention') return h('span', common, '?')
       if (state === 'done') return h('span', common, '\u2713')
       if (state === 'running') return h('span', { ...common, className: 'dshAb_glyph dshAb_pulse' }, '\u25CF')
@@ -228,13 +246,15 @@ window.__ModuleLoader__.load({
         const dots = states.filter((state) => groups.buckets[state].length > 0)
         return h('div', { className: 'dshAb_rail' },
           dots.length === 0
-            ? h('span', { className: 'dshAb_railDot', 'aria-hidden': true })
+            ? h('span', {
+              className: 'dshAb_railDot',
+              style: { background: COLORS.idle },
+              'aria-hidden': true,
+            })
             : dots.map((state) => h('span', {
               key: state,
-              className: state === 'running' && groups.buckets[state].some((row) => row.state === 'running')
-                ? 'dshAb_railDot dshAb_pulse'
-                : 'dshAb_railDot',
-              'data-state': state,
+              className: 'dshAb_railDot dshAb_pulse',
+              style: { background: COLORS[state] ?? COLORS.idle },
               title: `${t(state)}: ${groups.buckets[state].length}`,
             })))
       }

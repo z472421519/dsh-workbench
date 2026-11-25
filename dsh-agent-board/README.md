@@ -33,7 +33,7 @@ Both long sections show 12 rows and offer a "show N more" row.
 
 | Element | Source |
 |---|---|
-| Glyph | `?` attention, pulsing `●` running, `✓` finished turn, `·` idle, `○` sleeping — shape carries the state, not only color |
+| Glyph | `?` attention (amber), pulsing `●` running (green), `✓` finished turn (green), `·` idle (gray), `○` sleeping (gray, fainter) — shape carries the state, not only color |
 | Title | The Session's display title |
 | Time | Compact age of the last change (`3m`, `5h`, `3d`) |
 
@@ -46,6 +46,31 @@ board degrades to one dot per active state, so a pending approval still shows.
 `useSessions` (the Session list) and `useSessionStatus` (live running and
 pending-interaction state), both already supplied to the seat. No Session is
 opened or retained to draw a row, no log is read, and no model request is made.
+
+## Colors
+
+Every state maps to one Harness theme token in the `COLORS` table at the top of
+`client.js`:
+
+```js
+const COLORS = {
+  attention: 'var(--dsw-alias-state-warn-primary)',    // amber
+  running:   'var(--dsw-alias-state-success-primary)', // green
+  done:      'var(--dsw-alias-state-success-primary)', // green
+  idle:      'var(--dsw-alias-label-caption)',         // gray
+  sleeping:  'var(--dsw-alias-label-caption)',         // gray, drawn fainter
+}
+```
+
+Edit that table to re-map a state. Because these are theme tokens, the board
+follows light/dark and any brand override the deployment applies — literal hex
+values would not. The glyph shape stays the same whatever the color, so a state
+is never carried by color alone.
+
+`done` and `running` intentionally share green: both mean "nothing is waiting on
+you". The check glyph separates them. To split them, point `done` at another
+token, for example `--dsw-alias-label-secondary` for a neutral, or
+`--dsw-alias-state-business-primary` for the shipped blue.
 
 ## Changing the sleep threshold
 
