@@ -7,10 +7,14 @@
  * row per Session with a status glyph, the title, and a relative timestamp.
  * Selecting a row opens that Session.
  *
- * Sleep is time-based only: a Session with no pending interaction, no running
- * work, and no update for `SLEEP_AFTER_MS` drops out of `recent` into
- * `sleeping`, so a long tail of stale conversations does not push live ones
- * off the panel.
+ * Ageing uses the only timestamp the list exposes. DSH derives
+ * `summary.updatedAt` as `max(createdAt, lastPromptAt)` (see
+ * `dsh-api-session-controller`'s list projection), so it is the last time the
+ * human *asked*, not the last time the turn *ended* — a turn that ran all
+ * night and just finished still carries last night's prompt time. The board
+ * therefore never ages out a Session that carries an unread completion:
+ * `sleeping` means "no update for `SLEEP_AFTER_MS`, nothing to report, not
+ * running", so a long task that just landed stays in `recent`.
  *
  * Rows come from `useSessions` and `useSessionStatus`, both already supplied by
  * the frame, so drawing the list retains no Session and reads no log.
@@ -26,8 +30,6 @@ window.__ModuleLoader__.load({
     const NS = 'agentBoard'
     /** Sections, in display order. */
     const SECTIONS = ['attention', 'running', 'recent', 'sleeping']
-    /** Rows shown per section before the "show more" row. */
-    const SECTION_LIMIT = 12
     /**
      * Colors per state, following the agentbar palette rather than the
      * amber/green "traffic light" reading:
@@ -106,9 +108,18 @@ window.__ModuleLoader__.load({
 /* A 3px rail in the state color carries the state where a faint tint cannot. */
 .dshAb_row::after{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--dshAb-tint);opacity:var(--dshAb-alpha,1);pointer-events:none}
 .dshAb_row>span{position:relative;z-index:1}
+/* The title takes the free width and is the only part allowed to shrink; the
+   time beside it keeps its intrinsic width so the column of ages stays aligned. */
+.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dshAb_time{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+.dshAb_empty{padding:12px 8px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px;text-align:center}
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 .dshAb_glyph{flex:none;display:grid;place-items:center;width:14px;height:14px;font-size:12px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
 .dshAb_glyph[data-state=sleeping]{opacity:.6}
+/* Collapsed 56px rail: one dot per state that has members. The dot needs a
+   real box, or a color with no size paints nothing. */
+.dshAb_rail{display:flex;flex-direction:column;align-items:center;gap:6px;box-sizing:border-box;width:100%;padding:10px 0}
+.dshAb_railDot{flex:none;display:block;width:8px;height:8px;border-radius:50%}
 @media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}}
 `
 
@@ -170,6 +181,12 @@ window.__ModuleLoader__.load({
 
     /**
      * Fold one Session's list row and live status into a board entry.
+     *
+     * Precedence is: pending interaction, running, unread completion, sleep,
+     * idle. The completion test comes *before* the age test on purpose: the
+     * only timestamp the list exposes is the last prompt time, not the last
+     * activity time, so a freshly finished long turn must not be aged out by
+     * the age of the question that started it.
      * @param summary - the list row.
      * @param status - that Session's live UI status, when known.
      * @param t - active dictionary.
@@ -196,24 +213,77 @@ window.__ModuleLoader__.load({
       if (status?.running === true || summary.running) {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
       }
-      // Age out before the finished/idle split: pending interaction and running
-      // work returned above, so an approval never ages into `sleeping`, while a
-      // quiet Session always does once it has been still long enough.
-      if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
-      }
+      // `completionUnread` is the only "a turn finished" evidence the client
+      // holds: ui-session raises it when a Session it observed running stops,
+      // and only while that Session sits outside the main view. It is therefore
+      // deliberately *not* inferred from a title — DSH projects the title as
+      // soon as the first user message commits, so a turn that failed or was
+      // interrupted still carries one, and reading it as "done" painted failed
+      // Sessions green. A Session in the main view has no completion marker at
+      // all; it stays idle (or running) here rather than being guessed at.
       if (status?.completionUnread === true) {
         return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
       }
-      // `completionUnread` is only raised for a Session outside the main view
-      // (see ui-session's observeRunning), so the conversation you are looking
-      // at could never show as done. Reading a logged title is the client-side
-      // evidence that this Session has completed at least one turn; it stays
-      // exact because a Session with no turn has no title yet.
-      if (summary.title !== undefined && summary.title.trim() !== '') {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
+      // Age out last, on the only timestamp the list exposes. DSH defines
+      // `summary.updatedAt` as `max(createdAt, lastPromptAt)` — the question
+      // time, not the end-of-turn time — so it cannot date a turn's finish.
+      // The safe reading is: a Session still carrying an unread completion
+      // returned above and never sleeps, so a turn that ran all night does not
+      // drop into the archive the moment it lands. Only a Session with nothing
+      // to report and no question in `SLEEP_AFTER_MS` sleeps.
+      if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
+        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
       }
       return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
+    }
+
+    /**
+     * Group every listed Session into the four board sections.
+     *
+     * Pure, and kept out of the component so the grouping rules can be
+     * exercised without a renderer. Order inside `attention` and `running`
+     * follows the frame's own list order; `recent` and `sleeping` are newest
+     * first.
+     * @param list - the Session list snapshot (`ids` plus `byId`).
+     * @param statuses - the live status map, keyed by Session id.
+     * @param t - active dictionary.
+     * @param now - epoch milliseconds sampled once per render.
+     * @returns one array per section, in `SECTIONS` order.
+     */
+    function bucketOf(list, statuses, t, now) {
+      const buckets = { attention: [], running: [], recent: [], sleeping: [] }
+      for (const id of list?.ids ?? []) {
+        const summary = list.byId?.[id]
+        if (summary === undefined) continue
+        const entry = entryOf(summary, statuses?.get?.(id), t, now)
+        if (entry === undefined) continue
+        if (entry.state === 'attention') buckets.attention.push(entry)
+        else if (entry.state === 'running') buckets.running.push(entry)
+        else if (entry.state === 'sleeping') buckets.sleeping.push(entry)
+        else buckets.recent.push(entry)
+      }
+      buckets.recent.sort((a, b) => b.time - a.time)
+      buckets.sleeping.sort((a, b) => b.time - a.time)
+      return buckets
+    }
+
+    /**
+     * The rows one section actually renders.
+     *
+     * An expanded section renders every row it holds. There is no cap and no
+     * "show more" control: the sidebar already gives the seat one scrolling
+     * viewport (`.dshAb_scroll`), so a capped list would only make row 13+
+     * permanently unreachable — and the "needs you" section is exactly where
+     * hiding a row costs the most. A folded section renders nothing; its header
+     * still shows the true count.
+     * @param buckets - output of `bucketOf`.
+     * @param collapsed - fold state per section.
+     * @param state - the section to read.
+     * @returns the rows to draw, or an empty array when folded.
+     */
+    function rowsFor(buckets, collapsed, state) {
+      if (collapsed[state] === true) return []
+      return buckets[state] ?? []
     }
 
     /**
@@ -353,20 +423,7 @@ window.__ModuleLoader__.load({
         const current = panelActive
           ? undefined
           : Object.values(list?.byId ?? {}).find((row) => (row.retainedBy?.mainView ?? 0) > 0)?.id
-        const buckets = { attention: [], running: [], recent: [], sleeping: [] }
-        for (const id of list?.ids ?? []) {
-          const summary = list.byId[id]
-          if (summary === undefined) continue
-          const entry = entryOf(summary, statuses?.get?.(id), t, now)
-          if (entry === undefined) continue
-          if (entry.state === 'attention') buckets.attention.push(entry)
-          else if (entry.state === 'running') buckets.running.push(entry)
-          else if (entry.state === 'sleeping') buckets.sleeping.push(entry)
-          else buckets.recent.push(entry)
-        }
-        buckets.recent.sort((a, b) => b.time - a.time)
-        buckets.sleeping.sort((a, b) => b.time - a.time)
-        return { current, buckets }
+        return { current, buckets: bucketOf(list, statuses, t, now) }
       }, [list, statuses, panelActive, t])
 
       const open = (id) => {
@@ -396,17 +453,15 @@ window.__ModuleLoader__.load({
             })))
       }
 
-      // A section shows its newest rows up to the cap; the header count still
-      // states the true total, so nothing is hidden silently.
-      const rowsFor = (state) => (collapsed[state] === true
-        ? []
-        : groups.buckets[state].slice(0, SECTION_LIMIT))
+      // An expanded section renders every row it holds; a folded one renders
+      // none. See `rowsFor` for why there is no cap any more.
+      const shownFor = (state) => rowsFor(groups.buckets, collapsed, state)
 
       const section = (state) => {
         const all = groups.buckets[state]
         if (all.length === 0) return null
         const isOpen = collapsed[state] !== true
-        const shown = rowsFor(state)
+        const shown = shownFor(state)
         return h('div', { className: 'dshAb_section', key: state },
           h('button', {
             type: 'button',
@@ -461,7 +516,7 @@ window.__ModuleLoader__.load({
             ...SECTIONS.map(section))))
     }
 
-    return {
+    const plugin = {
       inject: ['slots', 'locale'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'agent-board: dictionaries')
@@ -471,17 +526,42 @@ window.__ModuleLoader__.load({
           locale: NS,
           inject: () => ({
             /**
-             * Open one Session in the conversation column, leaving the current
-             * main panel for the Conversation.
+             * Bring the Conversation back to the centre column.
+             *
+             * `uiWorkspace` is a module-private instance inside
+             * `dsh-client-ui-workspace`, never a registered service, so reading
+             * it off the context yields `undefined` and the click did nothing.
+             * The public path is the layout service: `selectPanel(null)` shows
+             * the Conversation, and selecting the Session itself is the frame's
+             * job once that panel is visible.
+             *
+             * `layout` is deliberately NOT listed in `inject`: declaring a
+             * service there gates `apply`, and an earlier revision gated it on a
+             * service that does not exist, which left the whole board unregistered.
              * @param sessionId - the row's Session.
              */
             openSession: (sessionId) => {
-              const workspace = typeof ctx.get === 'function' ? ctx.get('uiWorkspace') : undefined
-              workspace?.openSession(sessionId)
+              void sessionId
+              const layout = typeof ctx.get === 'function' ? ctx.get('layout') : undefined
+              if (layout === undefined || typeof layout.selectPanel !== 'function') return
+              try {
+                layout.selectPanel(null)
+              } catch {
+                // An unregistered main key must not throw out of a click handler.
+              }
             },
           }),
         }, BoardSection))
       },
     }
+
+    // Test seam: the pure helpers and the stylesheet, reachable from Node
+    // without a renderer. Off by default, so the object the Host loads keeps
+    // exactly the two keys a Cordis plugin declares.
+    if (globalThis.__DSH_AGENT_BOARD_TEST__ === true) {
+      plugin.testing = { entryOf, bucketOf, rowsFor, CSS, SLEEP_AFTER_MS }
+    }
+
+    return plugin
   },
 })
