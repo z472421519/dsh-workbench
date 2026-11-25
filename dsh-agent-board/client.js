@@ -49,14 +49,18 @@ window.__ModuleLoader__.load({
      */
     const COLORS = {
       /**
-       * Waiting on the human: violet. The theme has no violet alias, so this is
-       * the one hard-coded static step; it clears AA on both sidebar
-       * backgrounds.
+       * Waiting on the human. agentbar maps `waiting` to MAGENTA
+       * (`agentbar/ui.py` LABELS + color pair 2), which is the lilac bubble in
+       * the reference; violet is the closest DSH step, and it clears AA on both
+       * sidebar backgrounds.
        */
       attention: 'var(--dsw-static-violet-400)',
       /** Live work: the business accent, so it follows light/dark like every alias. */
       running: 'var(--dsw-alias-state-business-primary)',
-      /** A finished turn: green. */
+      /**
+       * A finished turn: GREEN, matching agentbar's `done` -> COLOR_GREEN
+       * (color pair 3), i.e. the green circled check in the reference.
+       */
       done: 'var(--dsw-alias-state-success-primary)',
       /** Quiet: gray. */
       idle: 'var(--dsw-alias-label-caption)',
@@ -288,9 +292,11 @@ window.__ModuleLoader__.load({
      * Font is installed; the braille spinner is ordinary Unicode.
      */
     const GLYPHS = {
-      attention: '\uF075',
-      done: '\uF0134',
-      sleeping: '\uF04B2',
+      // Plane-16/15 code points need the braced form: '\uF0134' would instead be
+      // U+F013 followed by the character "4".
+      attention: '\u{F075}',
+      done: '\u{F0134}',
+      sleeping: '\u{F04B2}',
     }
     /** Braille spinner frames, exactly the pair sequence agentbar cycles. */
     const GLYPH_FRAMES = ['\u280B\u2819', '\u2819\u2839', '\u2839\u2838', '\u2838\u283C',

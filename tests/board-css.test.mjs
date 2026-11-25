@@ -230,3 +230,28 @@ test('the board keeps its 12-hour sleep threshold and its four sections', () => 
   assert.match(source, /SLEEP_AFTER_MS = 12 \* 60 \* 60 \* 1000/)
   assert.match(source, /const SECTIONS = \['attention', 'running', 'recent', 'sleeping'\]/)
 })
+
+test('Nerd Font glyphs are single code points, not a plane-15 char plus a digit', () => {
+  // `'\uF0134'` is U+F013 followed by the character "4"; the braced form is the
+  // only correct spelling for these Private Use Area code points.
+  const table = source.match(/const GLYPHS = \{([\s\S]*?)\n    \}/)
+  assert.ok(table !== null, 'the glyph table must exist')
+  const expected = { attention: 0xF075, done: 0xF0134, sleeping: 0xF04B2 }
+  for (const [state, code] of Object.entries(expected)) {
+    const line = table[1].split('\n').find((entry) => entry.includes(`${state}:`))
+    assert.ok(line !== undefined, `missing glyph for ${state}`)
+    assert.match(line, /\\u\{[0-9A-F]{4,5}\}/, `${state} must use the braced form`)
+  }
+})
+
+test('state colors follow agentbar: waiting is violet, done is green', () => {
+  // agentbar/ui.py: waiting -> COLOR_MAGENTA (pair 2), done -> COLOR_GREEN (pair 3).
+  const colors = source.match(/const COLORS = \{([\s\S]*?)\n    \}/)
+  assert.ok(colors !== null, 'the color table must exist')
+  const body = colors[1]
+  const attention = body.match(/attention:\s*'([^']+)'/)
+  const done = body.match(/done:\s*'([^']+)'/)
+  assert.ok(attention !== null && done !== null)
+  assert.match(attention[1], /violet|magenta/i, 'needs-you is the violet/magenta state')
+  assert.match(done[1], /success/i, 'done is the green success state')
+})
