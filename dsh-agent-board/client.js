@@ -65,16 +65,25 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Strength of the whole-row tint per state. The tint is the state color at
-     * this alpha, so the strip reads as colored without the text losing
-     * contrast. Set a state to 0 to keep its rows flat.
+     * The monospace uppercase tag agentbar draws between the state icon and the
+     * title (`CX` in the reference).
+     *
+     * DSH exposes no "agent type" projection on a list row, and inventing a
+     * code per Session would be a fabrication, so the tag is derived from
+     * something the list really carries: the Session's working directory.
+     * Two leading alphanumerics of its basename, uppercased — `dsh-workbench`
+     * reads `DS`, `/tmp/probe` reads `PR`. A Session with no `cwd` gets no tag
+     * at all rather than a made-up one; the title simply starts at the next
+     * column.
+     * @param cwd - the Session's working directory, when the list carries one.
+     * @returns the two-character tag, or an empty string.
      */
-    const TINTS = {
-      attention: 1,
-      running: 0.8,
-      done: 0.65,
-      idle: 0.8,
-      sleeping: 0.4,
+    function tagOf(cwd) {
+      if (typeof cwd !== 'string') return ''
+      const segments = cwd.split(/[\\/]+/).filter((segment) => segment !== '')
+      const base = segments[segments.length - 1] ?? ''
+      const letters = base.replace(/[^0-9A-Za-z]/g, '').substring(0, 2)
+      return letters.toUpperCase()
     }
 
     /**
@@ -91,31 +100,43 @@ window.__ModuleLoader__.load({
     const CSS = `
 .dshAb_root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);--dshAb-nerd:'Symbols Nerd Font','Symbols Nerd Font Mono','Nerd Font Symbols','MesloLGS NF','MesloLGL Nerd Font','0xProto Nerd Font'}
 .dshAb_scroll{display:flex;flex-direction:column;gap:10px;box-sizing:border-box;width:100%;height:100%;min-height:0;padding:4px 8px 12px;overflow-y:auto}
-.dshAb_section{display:flex;flex-direction:column;gap:1px;flex:none}
+/* Rows sit flush against each other: the separator is each row's own 1px
+   bottom border, never a gap (a gap would let the sidebar background show
+   through and break the single dark strip the reference draws). */
+.dshAb_section{display:flex;flex-direction:column;flex:none}
 .dshAb_head{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;padding:4px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;text-align:left;cursor:pointer}
 @media (hover:hover){.dshAb_head:hover{color:var(--dsw-alias-label-secondary)}}
 .dshAb_head:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 .dshAb_chevron{flex:none;width:8px;height:8px;transition:transform 120ms ease}
 .dshAb_chevron[data-open]{transform:rotate(90deg)}
 .dshAb_headCount{margin-left:auto;color:var(--dsw-alias-label-caption);font-weight:400}
-.dshAb_row{position:relative;display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;min-height:28px;padding:4px 6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(18px + ${ZERO});text-align:left;cursor:pointer}
-/* The whole strip carries the state color as a low-alpha tint; the text keeps
-   its theme foreground, so contrast never depends on the accent. */
-.dshAb_row::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--dshAb-tint);opacity:calc(.2 * var(--dshAb-alpha,1));pointer-events:none;transition:opacity 120ms ease}
-@media (hover:hover){.dshAb_row:hover::before{opacity:calc(.32 * var(--dshAb-alpha,1))}}
-.dshAb_row[data-current]::before{opacity:calc(.36 * var(--dshAb-alpha,1))}
-/* Keep the glyph and labels above the tint layer. */
-/* A 3px rail in the state color carries the state where a faint tint cannot. */
-.dshAb_row::after{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--dshAb-tint);opacity:var(--dshAb-alpha,1);pointer-events:none}
+/* One row: a full-width dark strip with a 4px state rail flush to its left
+   edge, then icon, label, title, and the right-hand age. Square (2px) corners
+   and a 1px bottom rule between rows, as in the agentbar reference. */
+.dshAb_row{position:relative;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:48px;padding:0 10px 0 16px;border:none;border-bottom:1px solid var(--dsw-alias-border-l1);border-radius:2px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:${SMALL};line-height:calc(20px + ${ZERO});text-align:left;cursor:pointer}
+/* Hover and current-row emphasis ride an overlay instead of recoloring the
+   strip, so the base fill stays one flat alias color per the reference. */
+.dshAb_row::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--dsw-alias-interactive-bg-hover);opacity:0;pointer-events:none;transition:opacity 120ms ease}
+@media (hover:hover){.dshAb_row:hover::before{opacity:1}}
+.dshAb_row[data-current]::before{opacity:1}
+.dshAb_row:last-child{border-bottom:none}
+/* The 4px state rail spans the row's full height and sits flush left. */
+.dshAb_row::after{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--dshAb-tint);pointer-events:none}
+/* Keep the glyph and labels above both overlay layers. */
 .dshAb_row>span{position:relative;z-index:1}
 /* The title takes the free width and is the only part allowed to shrink; the
    time beside it keeps its intrinsic width so the column of ages stays aligned. */
-.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dshAb_name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;line-height:20px;color:var(--dsw-alias-label-primary)}
 .dshAb_time{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
 .dshAb_empty{padding:12px 8px;color:var(--dsw-alias-label-tertiary);font-size:${SMALL};line-height:20px;text-align:center}
 .dshAb_row:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.dshAb_glyph{flex:none;display:grid;place-items:center;width:14px;height:14px;font-size:12px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
+/* State icon: 18px box in the state color, never shrinking. */
+.dshAb_glyph{flex:none;display:grid;place-items:center;width:18px;height:18px;font-size:18px;line-height:1;font-family:var(--dshAb-nerd),var(--dsw-font-family)}
 .dshAb_glyph[data-state=sleeping]{opacity:.6}
+/* The monospace uppercase tag in front of the title (agentbar's "CX"). The
+   reference draws it in cyan; the DSH palette ships no cyan alias, so the link
+   alias — the theme's cool information color — stands in. */
+.dshAb_tag{flex:none;color:var(--dsw-alias-link);font-family:var(--ds-font-family-code);font-size:12px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
 /* Collapsed 56px rail: one dot per state that has members. The dot needs a
    real box, or a color with no size paints nothing. */
 .dshAb_rail{display:flex;flex-direction:column;align-items:center;gap:6px;box-sizing:border-box;width:100%;padding:10px 0}
@@ -208,10 +229,10 @@ window.__ModuleLoader__.load({
             : pending.kind === 'plan-review'
               ? t('planReview')
               : t('attention')
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'attention', detail: label }
+        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'attention', detail: label }
       }
       if (status?.running === true || summary.running) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
+        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
       }
       // `completionUnread` is the only "a turn finished" evidence the client
       // holds: ui-session raises it when a Session it observed running stops,
@@ -222,7 +243,7 @@ window.__ModuleLoader__.load({
       // Sessions green. A Session in the main view has no completion marker at
       // all; it stays idle (or running) here rather than being guessed at.
       if (status?.completionUnread === true) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
+        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
       }
       // Age out last, on the only timestamp the list exposes. DSH defines
       // `summary.updatedAt` as `max(createdAt, lastPromptAt)` — the question
@@ -232,9 +253,9 @@ window.__ModuleLoader__.load({
       // drop into the archive the moment it lands. Only a Session with nothing
       // to report and no question in `SLEEP_AFTER_MS` sleeps.
       if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
+        return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'sleeping', detail: '' }
       }
-      return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
+      return { id: summary.id, title: summary.displayTitle, tag: tagOf(summary.cwd), time: summary.updatedAt, state: 'idle', detail: '' }
     }
 
     /**
@@ -493,14 +514,12 @@ window.__ModuleLoader__.load({
             key: row.id,
             'data-state': row.state,
             'data-current': row.id === groups.current ? '' : undefined,
-            style: {
-              '--dshAb-tint': COLORS[row.state] ?? COLORS.idle,
-              '--dshAb-alpha': String(TINTS[row.state] ?? 0.12),
-            },
+            style: { '--dshAb-tint': COLORS[row.state] ?? COLORS.idle },
             title: row.detail === '' ? row.title : `${row.title} — ${row.detail}`,
             onClick: () => { open(row.id) },
           },
             h(Glyph, { state: row.state }),
+            row.tag === '' ? null : h('span', { className: 'dshAb_tag' }, row.tag),
             h('span', { className: 'dshAb_name' }, row.title),
             h('span', { className: 'dshAb_time' }, relative(row.time)))))
       }
@@ -526,22 +545,44 @@ window.__ModuleLoader__.load({
           locale: NS,
           inject: () => ({
             /**
-             * Bring the Conversation back to the centre column.
+             * Open one Session in the centre column: select it *and* show its
+             * Conversation, then (only if neither is available) fall back to
+             * merely revealing the Conversation.
              *
-             * `uiWorkspace` is a module-private instance inside
-             * `dsh-client-ui-workspace`, never a registered service, so reading
-             * it off the context yields `undefined` and the click did nothing.
-             * The public path is the layout service: `selectPanel(null)` shows
-             * the Conversation, and selecting the Session itself is the frame's
-             * job once that panel is visible.
+             * `UiWorkspace.openSession` is the documented navigation action
+             * ("Select a Session and show its Conversation as one UI navigation
+             * action" — `@deepseek-ai/dsh-client-ui-workspace/src/client/navigation.ts`),
+             * and the service *is* reachable here: `UiWorkspaceService extends
+             * Service` and calls `super(ctx, 'uiWorkspace')`, and Cordis's
+             * `Service` constructor ends with `this.ctx.reflect.provide(name,
+             * self, ...)`. So the module-private `new UiWorkspaceService(...)`
+             * instance in `ui-workspace/src/client/index.ts` is still a
+             * registered service; `ctx.get('uiWorkspace')` reads it. The
+             * shipped `dsh-experimental-liveshare` relies on exactly that
+             * (`inject = ['slots', 'locale', 'remote']`, then
+             * `ctx.get('uiWorkspace')` and `workspace.openSession(...)`).
              *
-             * `layout` is deliberately NOT listed in `inject`: declaring a
-             * service there gates `apply`, and an earlier revision gated it on a
-             * service that does not exist, which left the whole board unregistered.
+             * `uiWorkspace` is NOT listed in `inject` on purpose: declaring it
+             * makes Cordis gate `apply` on the service's presence, and an
+             * earlier revision parked the whole plugin that way. Read lazily
+             * through `ctx.get`, exactly as liveshare does; a missing service
+             * then costs a fallback, not the board.
+             *
+             * `layout.selectPanel(null)` alone does not select a Session — it
+             * only shows the Conversation panel — which is why clicking a row
+             * changed nothing. It stays as the last-resort fallback.
              * @param sessionId - the row's Session.
              */
             openSession: (sessionId) => {
-              void sessionId
+              const uiWorkspace = typeof ctx.get === 'function' ? ctx.get('uiWorkspace') : undefined
+              if (uiWorkspace !== undefined && typeof uiWorkspace.openSession === 'function') {
+                try {
+                  uiWorkspace.openSession(sessionId)
+                  return
+                } catch {
+                  // A refused navigation must not swallow the fallback below.
+                }
+              }
               const layout = typeof ctx.get === 'function' ? ctx.get('layout') : undefined
               if (layout === undefined || typeof layout.selectPanel !== 'function') return
               try {

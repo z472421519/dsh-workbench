@@ -47,15 +47,17 @@ const { id, plugin } = loadBoard()
 
 /**
  * A minimal ctx that records what `apply` touches.
- * @param options - `layout` service value to return from `ctx.get`, if any.
+ * @param options - services to return from `ctx.get`, by name.
  * @returns the recording ctx plus the captured registration.
  */
-function recordingCtx({ layout } = {}) {
+function recordingCtx({ layout, uiWorkspace } = {}) {
   const captured = { locale: [], registrations: [], effects: [] }
   const ctx = {
     get(name) {
       captured.getCalls = (captured.getCalls ?? []).concat(name)
-      return name === 'layout' ? layout : undefined
+      if (name === 'layout') return layout
+      if (name === 'uiWorkspace') return uiWorkspace
+      return undefined
     },
     effect(factory, label) {
       captured.effects.push(label)
@@ -102,8 +104,20 @@ test('the inject literal in source is the expected pair', () => {
   // parked the plugin.
   const declared = [...source.matchAll(/inject:\s*\[([^\]]*)\]/g)].map((m) => m[1])
   assert.equal(declared.length, 1, `expected one inject declaration, found ${declared.length}`)
-  assert.ok(!declared[0].includes('uiWorkspace'), 'uiWorkspace is module-private, never a service')
+  assert.ok(!declared[0].includes('uiWorkspace'), 'uiWorkspace is read lazily; declaring it would gate apply')
   assert.ok(!declared[0].includes('layout'), 'layout is read lazily; declaring it would gate apply')
+})
+
+test('uiWorkspace is reachable without being declared in inject', () => {
+  // The navigation capability is a real Cordis service: `UiWorkspaceService`
+  // extends `Service` and calls `super(ctx, 'uiWorkspace')`, whose base
+  // constructor runs `ctx.reflect.provide(...)`. The shipped
+  // `dsh-experimental-liveshare` reads it the same way — `ctx.get('uiWorkspace')`
+  // from a plugin whose `inject` does not list it.
+  const body = source.slice(source.indexOf('openSession: (sessionId)'))
+  const declaration = body.slice(0, body.indexOf('},\n          }),'))
+  assert.match(declaration, /ctx\.get\('uiWorkspace'\)/, 'the row resolves the navigation service')
+  assert.match(declaration, /\.openSession\(sessionId\)/, 'and hands it the clicked Session id')
 })
 
 test('there is no bare import and no external dependency', () => {
@@ -174,19 +188,102 @@ function applyAndInject(options) {
   return { injected: registration.options.inject(), recording }
 }
 
-test('openSession shows the Conversation through the layout service', () => {
-  // `uiWorkspace` is module-private inside ui-workspace and never a registered
-  // service. The public path to the Conversation is `layout.selectPanel(null)`.
+/**
+ * A `uiWorkspace` stand-in recording every navigation it receives.
+ * @returns the stub plus the array its calls land in.
+ */
+function uiWorkspaceStub({ throws = false } = {}) {
+  const opened = []
+  return {
+    opened,
+    service: {
+      openSession(target) {
+        opened.push(target)
+        if (throws) throw new Error('navigation refused')
+      },
+    },
+  }
+}
+
+test('openSession selects that exact Session through uiWorkspace.openSession', () => {
+  // The defect: the row only called `layout.selectPanel(null)`, which reveals
+  // the Conversation panel but never selects a Session, so clicking a row did
+  // nothing. `UiWorkspace.openSession` is the documented "select a Session and
+  // show its Conversation as one UI navigation action".
+  const { service, opened } = uiWorkspaceStub()
+  const panels = []
+  const { injected } = applyAndInject({
+    uiWorkspace: service,
+    layout: { selectPanel: (panel) => panels.push(panel) },
+  })
+  injected.openSession('session-42')
+  assert.deepEqual(opened, ['session-42'], 'the row Session id must reach uiWorkspace.openSession')
+  assert.deepEqual(panels, [], 'the layout fallback must not also run once navigation succeeded')
+})
+
+test('openSession passes the Session id straight through, not a wrapper', () => {
+  // `openSession(target: SessionTarget)` takes the id itself. An object or an
+  // undefined here would silently select nothing in the real service.
+  const { service, opened } = uiWorkspaceStub()
+  const { injected } = applyAndInject({ uiWorkspace: service })
+  injected.openSession('01JABCDEF')
+  injected.openSession('01JXYZ')
+  assert.deepEqual(opened, ['01JABCDEF', '01JXYZ'])
+  assert.ok(opened.every((target) => typeof target === 'string'))
+})
+
+test('openSession reads uiWorkspace lazily, not at apply time', () => {
+  // Declaring `uiWorkspace` in `inject` gates `apply` on the service and parks
+  // the whole plugin; reading it inside the click keeps the board mounted in
+  // profiles that have no Workspace UI.
+  const { service } = uiWorkspaceStub()
+  const { recording } = applyAndInject({ uiWorkspace: service })
+  assert.ok(
+    !recording.captured.getCalls?.includes('uiWorkspace'),
+    'apply must not resolve uiWorkspace while registering the seat',
+  )
+})
+
+test('openSession falls back to showing the Conversation when uiWorkspace is absent', () => {
   const panels = []
   const { injected } = applyAndInject({ layout: { selectPanel: (panel) => panels.push(panel) } })
   injected.openSession('session-42')
   assert.deepEqual(panels, [null], 'null selects the reserved Conversation panel')
 })
 
-test('openSession is inert, not throwing, when the layout service is absent or partial', () => {
+test('openSession falls back when uiWorkspace exists but has no openSession', () => {
+  // A partial or older service must not become a silent dead end.
+  const panels = []
+  const { injected } = applyAndInject({
+    uiWorkspace: {},
+    layout: { selectPanel: (panel) => panels.push(panel) },
+  })
+  injected.openSession('session-42')
+  assert.deepEqual(panels, [null])
+})
+
+test('openSession falls back when uiWorkspace.openSession throws', () => {
+  // A refused navigation still has to leave the user looking at the
+  // Conversation rather than at a panel they cannot leave.
+  const { service } = uiWorkspaceStub({ throws: true })
+  const panels = []
+  const { injected } = applyAndInject({
+    uiWorkspace: service,
+    layout: { selectPanel: (panel) => panels.push(panel) },
+  })
+  assert.doesNotThrow(() => { injected.openSession('session-42') })
+  assert.deepEqual(panels, [null], 'a throw from navigation must not swallow the fallback')
+})
+
+test('openSession is inert, not throwing, when every navigation path is absent or partial', () => {
   // A missing service is a reason not to navigate, never a reason to take
   // `apply` or a click handler down.
-  for (const options of [undefined, { layout: {} }, { layout: { selectPanel: null } }]) {
+  for (const options of [
+    undefined,
+    { layout: {} },
+    { layout: { selectPanel: null } },
+    { uiWorkspace: {}, layout: {} },
+  ]) {
     const { injected } = applyAndInject(options)
     assert.doesNotThrow(() => { injected.openSession('session-42') })
   }
@@ -194,6 +291,15 @@ test('openSession is inert, not throwing, when the layout service is absent or p
 
 test('openSession survives a selectPanel that throws', () => {
   const { injected } = applyAndInject({ layout: { selectPanel: () => { throw new Error('unregistered panel') } } })
+  assert.doesNotThrow(() => { injected.openSession('session-42') })
+})
+
+test('openSession survives an openSession that throws and a selectPanel that also throws', () => {
+  const { service } = uiWorkspaceStub({ throws: true })
+  const { injected } = applyAndInject({
+    uiWorkspace: service,
+    layout: { selectPanel: () => { throw new Error('unregistered panel') } },
+  })
   assert.doesNotThrow(() => { injected.openSession('session-42') })
 })
 
