@@ -194,6 +194,19 @@ window.__ModuleLoader__.load({
     function entryOf(summary, status, t, now) {
       if (summary.blank) return undefined
       if (summary.origin === 'subagent') return undefined
+      // Two titles, deliberately kept apart. `title` is what the row paints:
+      // `displayTitle`, which falls back to the project basename and then the
+      // session id. `storedTitle` is the durable name the Session actually
+      // has, empty until one is projected or typed. The Session menu takes the
+      // *stored* one — ui-workspace's row passes `row.title` — so the rename
+      // dialog seeds its draft with the real name instead of prefilling a
+      // directory-derived label the user then "confirms" into a rename.
+      const base = {
+        id: summary.id,
+        title: summary.displayTitle,
+        storedTitle: typeof summary.title === 'string' ? summary.title : '',
+        time: summary.updatedAt,
+      }
       const pending = status?.pendingInteraction
       if (pending !== undefined) {
         // The interaction's `kind` is a domain-owned discriminator; the three
@@ -206,10 +219,10 @@ window.__ModuleLoader__.load({
             : pending.kind === 'plan-review'
               ? t('planReview')
               : t('attention')
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'attention', detail: label }
+        return { ...base, state: 'attention', detail: label }
       }
       if (status?.running === true || summary.running) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'running', detail: t('runningLabel') }
+        return { ...base, state: 'running', detail: t('runningLabel') }
       }
       // `completionUnread` is the only "a turn finished" evidence the client
       // holds: ui-session raises it when a Session it observed running stops,
@@ -220,7 +233,7 @@ window.__ModuleLoader__.load({
       // Sessions green. A Session in the main view has no completion marker at
       // all; it stays idle (or running) here rather than being guessed at.
       if (status?.completionUnread === true) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'done', detail: t('doneLabel') }
+        return { ...base, state: 'done', detail: t('doneLabel') }
       }
       // Age out last, on the only timestamp the list exposes. DSH defines
       // `summary.updatedAt` as `max(createdAt, lastPromptAt)` — the question
@@ -230,9 +243,9 @@ window.__ModuleLoader__.load({
       // drop into the archive the moment it lands. Only a Session with nothing
       // to report and no question in `SLEEP_AFTER_MS` sleeps.
       if (now - summary.updatedAt >= SLEEP_AFTER_MS) {
-        return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'sleeping', detail: '' }
+        return { ...base, state: 'sleeping', detail: '' }
       }
-      return { id: summary.id, title: summary.displayTitle, time: summary.updatedAt, state: 'idle', detail: '' }
+      return { ...base, state: 'idle', detail: '' }
     }
 
     /**
@@ -412,6 +425,56 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Props of one Session row, including the shared context-menu gesture.
+     *
+     * The menu itself is not ours: `ui-workspace` registers the Session
+     * actions (pin, rename, fork, copy id, archive) on `ctx.contextMenus`
+     * with `target: 'session'`, and the dialog they raise lives in
+     * `shell.overlay`. All of that is owned by whoever renders the row, so
+     * replacing `sidebar.workspaces` cut the only trigger: our row was a bare
+     * `<button>` with `onClick` and never dispatched a context menu, which is
+     * why right-click — and with it rename — did nothing.
+     *
+     * `getTriggerProps` is the frame's binding for that: it returns the
+     * caller's handlers plus `onContextMenu`, the ContextMenu/Shift+F10
+     * keyboard gesture and a focus stop, and captures the target when the
+     * gesture runs. Passing the row's `onClick` through it keeps one code
+     * path for both a plain click and a menu action.
+     *
+     * The target carries the row's **stored** title, matching what
+     * ui-workspace's own row passes (`row.title`, empty until one exists). The
+     * rename dialog seeds its draft from this value, so handing it the painted
+     * `displayTitle` would prefill a project-basename fallback and turn a
+     * no-op confirm into an accidental rename.
+     * @param row - the entry being rendered.
+     * @param current - id of the Session in the main view, when known.
+     * @param open - opens one Session.
+     * @param getTriggerProps - menu binding, or undefined when no menu plugin is composed.
+     * @returns props for the row button.
+     */
+    function rowPropsOf(row, current, open, getTriggerProps) {
+      const handlers = { onClick: () => { open(row.id) } }
+      // The Session the menu acts on travels with the gesture, not with the
+      // selection that may change while the menu is open.
+      const menu = getTriggerProps === undefined
+        ? undefined
+        : getTriggerProps(
+          { kind: 'session', value: { sessionId: row.id, displayTitle: row.storedTitle ?? '' } },
+          handlers,
+        )
+      return {
+        type: 'button',
+        className: 'dshAb_row',
+        key: row.id,
+        'data-state': row.state,
+        'data-current': row.id === current ? '' : undefined,
+        style: { '--dshAb-tint': COLORS[row.state] ?? COLORS.idle },
+        title: row.detail === '' ? row.title : `${row.title} — ${row.detail}`,
+        ...(menu ?? handlers),
+      }
+    }
+
+    /**
      * Render the sidebar board.
      * @param props - the shell's fold state plus the frame's selector hooks.
      */
@@ -424,6 +487,14 @@ window.__ModuleLoader__.load({
       const scroller = props.hooks?.sectionScroller
         ? props.hooks.sectionScroller()
         : undefined
+      // `useContextMenu` is a plain prop the frame publishes to every seat
+      // (`ctx.slots.provideRoot`), not a React hook, so reading it
+      // unconditionally is safe and an unwired composition just loses the
+      // gesture instead of throwing.
+      const menuBindings = typeof props.useContextMenu === 'function'
+        ? props.useContextMenu()
+        : undefined
+      const getTriggerProps = menuBindings?.getTriggerProps
 
       const list = useSessions ? useSessions((state) => state) : undefined
       const statuses = useSessionStatus ? useSessionStatus((state) => state) : undefined
@@ -518,16 +589,9 @@ window.__ModuleLoader__.load({
             })),
             h('span', null, t(state)),
             h('span', { className: 'dshAb_headCount' }, String(all.length))),
-          ...shown.map((row) => h('button', {
-            type: 'button',
-            className: 'dshAb_row',
-            key: row.id,
-            'data-state': row.state,
-            'data-current': row.id === groups.current ? '' : undefined,
-            style: { '--dshAb-tint': COLORS[row.state] ?? COLORS.idle },
-            title: row.detail === '' ? row.title : `${row.title} — ${row.detail}`,
-            onClick: () => { open(row.id) },
-          },
+          ...shown.map((row) => h(
+            'button',
+            rowPropsOf(row, groups.current, open, getTriggerProps),
             h(Glyph, { state: row.state, iconFace }),
             h('span', { className: 'dshAb_name' }, row.title),
             h('span', { className: 'dshAb_time' }, relative(row.time)))))
@@ -609,7 +673,9 @@ window.__ModuleLoader__.load({
     // without a renderer. Off by default, so the object the Host loads keeps
     // exactly the two keys a Cordis plugin declares.
     if (globalThis.__DSH_AGENT_BOARD_TEST__ === true) {
-      plugin.testing = { entryOf, bucketOf, rowsFor, CSS, SLEEP_AFTER_MS, loadIconFace, ICON_FAMILY, FONT_FACES, GLYPHS }
+      plugin.testing = {
+        entryOf, bucketOf, rowsFor, rowPropsOf, CSS, SLEEP_AFTER_MS, loadIconFace, ICON_FAMILY, FONT_FACES, GLYPHS,
+      }
     }
 
     return plugin

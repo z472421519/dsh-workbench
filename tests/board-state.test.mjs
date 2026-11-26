@@ -143,10 +143,28 @@ test('a running Session stays running even with completionUnread set', () => {
   assert.equal(entry.state, 'running')
 })
 
-test('entryOf no longer reads summary.title as a completion signal', () => {
-  // Guards the fix itself: the title field may only appear as display text.
-  const body = source.slice(source.indexOf('function entryOf'), source.indexOf('function bucketOf'))
-  assert.ok(!body.includes('summary.title'), 'entryOf must not branch on summary.title')
+test('entryOf never lets summary.title decide the state', () => {
+  // Guards the original fix: the stored title is *not* completion evidence,
+  // because DSH projects one as soon as the first user message commits, so a
+  // turn that failed or was interrupted still carries one. The field is read
+  // only to hand the Session menu the real name (`storedTitle`) — so the
+  // invariant is about the returned state, not about the text appearing.
+  const now = Date.now()
+  const cases = [
+    ['titled, quiet, no completion', { title: 'Named', completionUnread: false }, 'idle'],
+    ['titled, quiet, stale', { title: 'Named', completionUnread: false, old: true }, 'sleeping'],
+    ['untitled, unread completion', { title: '', completionUnread: true }, 'done'],
+    ['titled, unread completion', { title: 'Named', completionUnread: true }, 'done'],
+  ]
+  for (const [label, options, expected] of cases) {
+    const summary = row({
+      displayTitle: 'dsh-workbench',
+      title: options.title,
+      updatedAt: options.old === true ? now - 13 * HOUR : now,
+    })
+    const status = { running: false, pendingInteraction: undefined, completionUnread: options.completionUnread }
+    assert.equal(entryOf(summary, status, t, now).state, expected, label)
+  }
 })
 
 // ---------------------------------------------------------------------------
