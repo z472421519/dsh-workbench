@@ -70,7 +70,7 @@ it about a tenth of its contrast.
 ## What it costs and what it touches
 
 - Each card is one extra model request on the route the Session already uses,
-  capped at `maxOutputTokens` (400 by default) and `timeoutMs` (30 s).
+  capped at `maxOutputTokens` (1 200 by default) and `timeoutMs` (30 s).
 - That request carries the reply's text (clipped around the middle at
   `maxInputChars`, 16 000 by default), so the text reaches the same provider the
   conversation already uses.
@@ -85,7 +85,7 @@ Optional fields on the `high-level` row in the profile patch:
 |---|---|---|
 | `model` | *(session route)* | `provider/id`, a bare model id, or empty for the Session's route |
 | `timeoutMs` | `30000` | Total budget for one summary request |
-| `maxOutputTokens` | `400` | Output cap for the summary |
+| `maxOutputTokens` | `1200` | Total completion budget, which a reasoning model also spends on hidden thinking |
 | `maxInputChars` | `16000` | Reply text sent to the model, clipped in the middle |
 | `minReplyChars` | `160` | Below this, a reply counts as already brief |
 | `minReplyLines` | `4` | … unless it also has this many non-empty lines |

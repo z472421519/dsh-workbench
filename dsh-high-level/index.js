@@ -20,7 +20,19 @@ export const inject = ['commands', 'llm']
 
 /** Reply budgets for one summary request. */
 const DEFAULT_TIMEOUT_MS = 30_000
-const DEFAULT_MAX_OUTPUT_TOKENS = 400
+/**
+ * Output budget for one summary request.
+ *
+ * This is a *total* completion budget, and a reasoning model spends it on
+ * hidden reasoning before it writes a single visible character. A 400-token cap
+ * was routinely exhausted by the thinking alone, leaving `text` empty at
+ * `finish: max-tokens` and surfacing as "the model returned no summary text"
+ * even though the request succeeded. Measured on `deepseek-v4.1-flash` over a
+ * 1.3k-character reply: reasoning alone ran 780–1790 tokens, so 400 truncated
+ * 5 of 6 attempts and emptied 1 of 6; 800 and above never did. The cap is
+ * therefore sized for the reasoning plus 3–5 bullets, not for the bullets.
+ */
+const DEFAULT_MAX_OUTPUT_TOKENS = 1_200
 const DEFAULT_MAX_INPUT_CHARS = 16_000
 const DEFAULT_MIN_REPLY_CHARS = 160
 const DEFAULT_MIN_REPLY_LINES = 4
@@ -156,15 +168,24 @@ async function requestSummary(ctx, session, reply, config, signal) {
   }
   let text = ''
   let failure
+  // A reasoning model can spend the whole completion budget thinking and emit
+  // no text block at all. Recording why it stopped turns an indistinguishable
+  // "no summary text" into an actionable message.
+  let truncated = false
   for await (const chunk of call.stream(request)) {
     if (chunk.type === 'text-delta') text += chunk.text
     if (chunk.type === 'finish' && chunk.reason.kind === 'error') failure = chunk.reason.failure
     if (chunk.type === 'finish' && chunk.reason.kind === 'aborted') failure = chunk.reason.failure
+    if (chunk.type === 'finish' && chunk.reason.kind === 'max-tokens') truncated = true
   }
   if (failure) throw new Error(failure.message ?? failure.code ?? 'model request failed')
   const summary = text.trim()
-  if (!summary) throw new Error('the model returned no summary text')
-  return { summary, route }
+  if (!summary) {
+    throw new Error(truncated
+      ? `the model used the whole ${config.maxOutputTokens}-token budget before writing a summary; raise maxOutputTokens in the "high-level" configuration`
+      : 'the model returned no summary text')
+  }
+  return { summary, route, truncated }
 }
 
 /** Format one settled summary as the command row's text. */
