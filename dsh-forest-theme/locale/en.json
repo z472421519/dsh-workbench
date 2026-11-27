@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Forest palette",
+    "description": "Brings the pi forest theme to DSH: a forest-green palette with a transparent canvas and glass panels, light and dark halves resolved by your pi theme generator (OKHSL, hue 145, saturation 100%). It applies on install with no settings to touch, and no new entry appears in Appearance - confirm by the UI turning forest green with panels letting the background through. Without a wallpaper the window shows the forest backdrop rather than going blank. It only stacks --dsw-* color tokens, so fonts, sizes, background images and icons stay untouched and your settings file is never written. Disabling or removing it restores the stock colors."
+  }
+}

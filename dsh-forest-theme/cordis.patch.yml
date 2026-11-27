@@ -1,0 +1,6 @@
+# dsh-forest-theme bundle patch: one row, so the bundle appears in the Loader
+# and its Client module loads with the page. All work happens in the browser
+# half — the Host row is the anchor the client module hangs from.
+- insert:
+    - id: forest-theme
+      name: dsh-forest-theme
