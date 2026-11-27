@@ -27,12 +27,28 @@ function loadBoard() {
   const registered = []
   const window = { __ModuleLoader__: { load(registration) { registered.push(registration) } } }
   globalThis.window = window
+  // A minimal hook stand-in: state is stored per hook slot so a re-render after
+  // a click sees the new value, which is what the add flow depends on.
+  const slots = []
+  let cursor = 0
   const react = {
     createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
-    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => undefined],
+    useState: (initial) => {
+      const at = cursor++
+      if (!(at in slots)) slots[at] = typeof initial === 'function' ? initial() : initial
+      return [slots[at], (next) => { slots[at] = next }]
+    },
+    useRef: (initial) => {
+      const at = cursor++
+      if (!(at in slots)) slots[at] = { current: initial }
+      return slots[at]
+    },
     useMemo: (factory) => factory(),
     useEffect: () => undefined,
   }
+  // A fresh mount: hook slots and the cursor both go back to zero, so one
+  // test's click cannot leak state into the next test's first paint.
+  react.__reset = () => { cursor = 0; slots.length = 0 }
   // eslint-disable-next-line no-new-func
   new Function('window', 'module', 'exports', source)(window, { exports: {} }, {})
   assert.equal(registered.length, 1)
@@ -40,6 +56,7 @@ function loadBoard() {
     if (name === 'react') return react
     throw new Error(`unexpected bare import: ${name}`)
   })
+  plugin.__react = react
   return { id: registered[0].id, plugin }
 }
 
@@ -50,13 +67,14 @@ const { id, plugin } = loadBoard()
  * @param options - services to return from `ctx.get`, by name.
  * @returns the recording ctx plus the captured registration.
  */
-function recordingCtx({ layout, uiWorkspace } = {}) {
+function recordingCtx({ layout, uiWorkspace, workspaces } = {}) {
   const captured = { locale: [], registrations: [], effects: [] }
   const ctx = {
     get(name) {
       captured.getCalls = (captured.getCalls ?? []).concat(name)
       if (name === 'layout') return layout
       if (name === 'uiWorkspace') return uiWorkspace
+      if (name === 'workspaces') return workspaces
       return undefined
     },
     effect(factory, label) {
@@ -320,5 +338,236 @@ test('the test seam is off unless explicitly enabled', () => {
     assert.deepEqual(Object.keys(plain).sort(), ['apply', 'inject'])
   } finally {
     delete globalThis.window
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Add workspace: the affordance this seat removed with the shipped browser.
+//
+// The board does not create Workspaces itself. It raises the shipped
+// `workspace.picker` Factory, which owns both the choice UI and the
+// `workspaces.create` call, and that Factory is the only seam covering BOTH
+// directory backends. These tests pin that composition boundary rather than
+// re-testing ui-workspace's own picker.
+// ---------------------------------------------------------------------------
+
+/**
+ * Load the board, capture its registration, and render one branch.
+ * @param props - component props to render with.
+ * @returns the rendered tree.
+ */
+function renderBoard(props) {
+  const { ctx, captured } = recordingCtx()
+  plugin.apply(ctx)
+  const injectCall = captured.registrations.find((entry) => entry.injectName !== undefined)
+  injectCall.factory()
+  const registration = captured.registrations.find((entry) => entry.options !== undefined)
+  const injected = registration.options.inject()
+  // Every render starts from hook slot 0; a test that clicks and re-renders
+  // does so through `rerender` so the previous state survives.
+  const reactRuntime = plugin.__react
+  reactRuntime?.__reset()
+  return registration.Component({ ...BASE_PROPS, ...injected, ...props })
+}
+
+/** Props every render needs; hooks are stand-ins that answer empty state. */
+const BASE_PROPS = {
+  t: (key) => key,
+  useSessions: (select) => select({ byId: {}, ids: [] }),
+  useSessionStatus: (select) => select({}),
+  usePanelInfo: (select) => select({ activePanelId: null }),
+}
+
+/**
+ * Find the first element in a tree matching a predicate.
+ * @param node - tree node.
+ * @param predicate - matcher.
+ * @returns the node, or undefined.
+ */
+function findNode(node, predicate) {
+  if (node === null || node === undefined || typeof node !== 'object') return undefined
+  if (predicate(node)) return node
+  for (const child of node.children ?? []) {
+    const hit = findNode(child, predicate)
+    if (hit !== undefined) return hit
+  }
+  return undefined
+}
+
+/**
+ * Every element in a tree, flattened.
+ * @param node - tree node.
+ * @returns all element nodes.
+ */
+function allNodes(node, out = []) {
+  if (node === null || node === undefined || typeof node !== 'object') return out
+  out.push(node)
+  for (const child of node.children ?? []) allNodes(child, out)
+  return out
+}
+
+/** A `renderFactorySlot` stand-in recording each Factory occurrence it renders. */
+function factoryStub() {
+  const rendered = []
+  const renderFactorySlot = (name, props) => {
+    rendered.push({ name, props })
+    return { type: 'factory', props: { name, ...props }, children: [] }
+  }
+  return { rendered, renderFactorySlot }
+}
+
+test('the add control raises the workspace.picker Factory, not a picker call', () => {
+  // `uiWorkspace.pickDirectory()` maps to `directoryPicker.pick`, which the
+  // Host refuses with `directory-picker/unavailable` unless the resolved
+  // backend is `native`. The Factory is the seam that also serves `browse`,
+  // and it is the same one the shipped hero picker uses.
+  const { rendered, renderFactorySlot } = factoryStub()
+  const tree = renderBoard({ renderFactorySlot })
+  const button = findNode(tree, (node) => node.props?.className === 'dshAb_add')
+  assert.ok(button !== undefined, 'the expanded header offers an add control')
+  button.props.onClick()
+  // The occurrence is rendered from the first paint; the click flips `open`.
+  const last = rendered[rendered.length - 1]
+  assert.equal(last.name, 'workspace.picker', 'the picker Factory is the only surface raised')
+})
+
+test('the picker occurrence is closed until the button is used', () => {
+  // A fresh board: nothing is raised before the click, but the Factory is
+  // mounted so its dialog can open later without remounting the seat.
+  const { rendered, renderFactorySlot } = factoryStub()
+  renderBoard({ renderFactorySlot })
+  const occurrence = rendered.find((entry) => entry.name === 'workspace.picker')
+  assert.ok(occurrence !== undefined, 'the Factory is mounted so its dialog can open later')
+  assert.equal(occurrence.props.open, false, 'nothing is raised before the click')
+  assert.equal(typeof occurrence.props.onPick, 'function', 'a pick reports back to the board')
+  assert.equal(typeof occurrence.props.onClose, 'function', 'a cancel settles too')
+})
+
+test('a picked Workspace closes the flow and opens that Workspace', () => {
+  const { rendered, renderFactorySlot } = factoryStub()
+  const opened = []
+  const tree = renderBoard({ renderFactorySlot, openSession: (id) => { opened.push(id) } })
+  const occurrence = rendered.find((entry) => entry.name === 'workspace.picker')
+  occurrence.props.onPick('ws-7')
+  assert.deepEqual(opened, ['ws-7'], 'the adopted Workspace becomes the visible one')
+})
+
+test('with no Factory available the control is hidden, not dead', () => {
+  // The shipped browser hid its ＋ when no directory-flow occupant was
+  // composed. Without `renderFactorySlot` there is no route to a directory, so
+  // shipping a button whose only outcome is an error is worse than hiding it.
+  const tree = renderBoard({})
+  const button = findNode(tree, (node) => node.props?.className === 'dshAb_add')
+  assert.equal(button, undefined, 'no picker seam, no add control')
+})
+
+test('the collapsed rail keeps the add control and the stylesheet', () => {
+  // The rail branch returns before the wide layout's markup. It used to return
+  // before the `<style>` element too, so the rail painted UA-default controls
+  // and invisible dots.
+  const { renderFactorySlot } = factoryStub()
+  const tree = renderBoard({ renderFactorySlot, wide: false })
+  const styles = allNodes(tree).filter((node) => node.props?.['data-agent-board'] !== undefined)
+  assert.equal(styles.length, 1, 'the rail branch still emits its stylesheet')
+  const button = findNode(tree, (node) => node.props?.className === 'dshAb_add')
+  assert.ok(button !== undefined, 'folding the sidebar does not lose the only route to adding')
+})
+
+test('the add control names what it adds, and is busy while the picker is up', () => {
+  const { renderFactorySlot } = factoryStub()
+  const tree = renderBoard({ renderFactorySlot })
+  const label = findNode(tree, (node) => node.props?.className === 'dshAb_headerLabel')
+  assert.equal(label.children[0], 'workspaces',
+    'the strip labels the thing the ＋ acts on; "sessions" would read as "add session"')
+  const button = findNode(tree, (node) => node.props?.className === 'dshAb_add')
+  assert.equal(button.props['aria-label'], 'addWorkspace')
+  assert.equal(button.props['aria-busy'], undefined, 'idle until raised')
+})
+
+// ---------------------------------------------------------------------------
+// The child-slot declaration table.
+//
+// `sidebar.workspaces` is `single`, and a child seat exists only while the
+// entry that OCCUPIES that slot declares it. The shipped browser declares
+// five; because the board shadows that entry, its table never lands — and
+// `sidebar.workspaces.directoryFlow` is the seat both directory-picker clients
+// wait on before they register. Missing it strands every picking affordance,
+// including the "Add workspace" row in the shipped picker menu.
+// ---------------------------------------------------------------------------
+
+test('the board restates the shipped child-slot table', () => {
+  const { ctx, captured } = recordingCtx()
+  plugin.apply(ctx)
+  const injectCall = captured.registrations.find((entry) => entry.injectName !== undefined)
+  injectCall.factory()
+  const registration = captured.registrations.find((entry) => entry.options !== undefined)
+  const children = registration.options.children
+  assert.ok(children !== undefined, 'a child seat must be declared by its occupier')
+  // Exactly the shipped keys and kinds, in the shipped shapes.
+  assert.deepEqual(Object.keys(children).sort(), [
+    'sidebar.session.row.hover',
+    'sidebar.session.row.leading',
+    'sidebar.session.row.trailing',
+    'sidebar.workspaces.directoryFlow',
+    'sidebar.workspaces.session.row.action',
+  ])
+  assert.deepEqual(children['sidebar.workspaces.directoryFlow'], { kind: 'single', scope: 'root' },
+    'the directory-flow seat is what the picker clients inject into')
+  assert.deepEqual(children['sidebar.workspaces.session.row.action'], { kind: 'list', scope: 'root' })
+  for (const key of ['sidebar.session.row.leading', 'sidebar.session.row.trailing']) {
+    assert.deepEqual(children[key], { kind: 'list', scope: 'root', inline: true }, `${key} stays inline`)
+  }
+})
+
+test('the declared kinds match the shipped ui-workspace table exactly', () => {
+  // A kind drift would either strand a client (wrong cardinality) or fail the
+  // registration; a key drift would silently drop a client. Pin the literal
+  // table so an edit to one side is visible here.
+  const { ctx, captured } = recordingCtx()
+  plugin.apply(ctx)
+  const injectCall = captured.registrations.find((entry) => entry.injectName !== undefined)
+  injectCall.factory()
+  const children = captured.registrations.find((entry) => entry.options !== undefined).options.children
+  const expected = {
+    'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+    'sidebar.workspaces.session.row.action': { kind: 'list', scope: 'root' },
+    'sidebar.session.row.leading': { kind: 'list', scope: 'root', inline: true },
+    'sidebar.session.row.trailing': { kind: 'list', scope: 'root', inline: true },
+    'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
+  }
+  assert.deepEqual(children, expected)
+})
+
+test('the declared table is what unblocks the directory picker', () => {
+  // Replays the slot core's rules over the real registration order:
+  //  - `single` refuses a second entry at the same priority
+  //  - a child seat exists only while its occupier declares it
+  //  - a picker client registers into all three holes, so one missing hole
+  //    stops the whole registration and hides "Add workspace" everywhere.
+  // The board occupies `sidebar.workspaces` alone (a second entry at priority 0
+  // would have thrown, yet the board renders), so the picker's
+  // `sidebar.workspaces.directoryFlow` had no declarer until the board
+  // restated the table.
+  const declared = new Set([
+    'conversation.hero.workspace.directoryFlow', // declared by its own entry
+    'workspace.picker.directoryFlow', // declared by the workspace.picker Factory
+  ])
+  const holes = [
+    'conversation.hero.workspace.directoryFlow',
+    'sidebar.workspaces.directoryFlow',
+    'workspace.picker.directoryFlow',
+  ]
+  assert.deepEqual(holes.filter((hole) => !declared.has(hole)),
+    ['sidebar.workspaces.directoryFlow'],
+    'the board is the only possible declarer of that hole')
+
+  const { ctx, captured } = recordingCtx()
+  plugin.apply(ctx)
+  const injectCall = captured.registrations.find((entry) => entry.injectName !== undefined)
+  injectCall.factory()
+  const children = captured.registrations.find((entry) => entry.options !== undefined).options.children
+  for (const hole of holes) {
+    if (hole !== 'sidebar.workspaces.directoryFlow') continue
+    assert.ok(children?.[hole] !== undefined, 'the board declares the hole the picker waits on')
   }
 })

@@ -18,8 +18,29 @@ footer — so it is **always visible**, not a page you open. There is no extra
 sidebar entry and no main-column page.
 
 **Enabling it replaces the shipped workspace browser**, which also removes its
-search box, drag reordering, workspace grouping controls, and Add-workspace
-button. Disable the plugin to get that browser back.
+search box, drag reordering, and workspace grouping controls. Disable the plugin
+to get that browser back.
+
+Because the seat is `single` and the board is its only occupant, the board also
+restates the browser's child-slot table (`sidebar.workspaces.directoryFlow` and
+the four Session-row seats). Those child seats exist only while the occupying
+entry declares them: without the restatement the directory-picker clients wait
+forever on a seat nobody declared, and every picking affordance disappears —
+the "Add workspace" row in the shipped picker menu included. If you edit that
+table, keep it identical to
+`@deepseek-ai/dsh-client-ui-workspace`'s own `register` call: a key or kind
+drift either strands a client or fails the registration outright.
+
+The **Add-workspace** control is the one browser action the board keeps: a ＋ in
+its header strip (also present when the sidebar is folded to its rail) that
+raises the shipped `workspace.picker` Factory. That Factory owns the choice and
+the registration, so the board works with whichever directory backend the Host
+resolved at boot — the native OS chooser or the in-app browse dialog. The board
+deliberately does not call `uiWorkspace.pickDirectory()`: that verb needs the
+`native` capability and refuses with `directory-picker/unavailable` on a Host
+serving `browse` (remote authority, SSH, non-loopback bind). Without the Factory
+in the composition, the ＋ is hidden rather than dead. Everything else about
+managing Workspaces (search, reordering, grouping) is still the browser's.
 
 ## The board
 

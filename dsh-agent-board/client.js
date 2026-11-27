@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useEffect, useMemo, useState } = React
+    const { useEffect, useMemo, useRef, useState } = React
 
     const NS = 'agentBoard'
     /** Sections, in display order. */
@@ -82,7 +82,7 @@ window.__ModuleLoader__.load({
 
     const CSS = `
 .dshAb_root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);--dshAb-nerd:'Symbols Nerd Font','Symbols Nerd Font Mono','MesloLGL Nerd Font','MesloLGM Nerd Font','MesloLGS Nerd Font','MesloLGLDZ Nerd Font','0xProto Nerd Font','JetBrainsMono Nerd Font','FiraCode Nerd Font'}
-.dshAb_scroll{display:flex;flex-direction:column;gap:10px;box-sizing:border-box;width:100%;height:100%;min-height:0;padding:4px 8px 12px;overflow-y:auto}
+.dshAb_scroll{display:flex;flex-direction:column;flex:1 1 auto;gap:10px;box-sizing:border-box;width:100%;min-height:0;padding:4px 8px 12px;overflow-y:auto}
 /* Rows sit flush against each other: the separator is each row's own 1px
    bottom border, never a gap (a gap would let the sidebar background show
    through and break the single dark strip the reference draws). */
@@ -118,6 +118,16 @@ window.__ModuleLoader__.load({
    real box, or a color with no size paints nothing. */
 .dshAb_rail{display:flex;flex-direction:column;align-items:center;gap:6px;box-sizing:border-box;width:100%;padding:10px 0}
 .dshAb_railDot{flex:none;display:block;width:8px;height:8px;border-radius:50%}
+/* The section header owns the one action this seat still has to offer. The
+   shipped browser put Add-workspace in the same strip (its header carried
+   search, view options, and ＋), so the board keeps that one control where a
+   reader coming from the browser already looks for it. */
+.dshAb_header{display:flex;align-items:center;gap:6px;box-sizing:border-box;width:100%;flex:none;padding:2px 8px;color:var(--dsw-alias-label-tertiary)}
+.dshAb_headerLabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em}
+.dshAb_add{flex:none;display:grid;place-items:center;box-sizing:border-box;width:22px;height:22px;padding:0;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:15px;line-height:1;cursor:pointer}
+@media (hover:hover){.dshAb_add:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}}
+.dshAb_add:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
+.dshAb_add[disabled]{opacity:.5;cursor:default}
 @media (prefers-reduced-motion:reduce){.dshAb_chevron{transition:none}.dshAb_pulse{animation:none}}
 `
 
@@ -135,6 +145,10 @@ window.__ModuleLoader__.load({
       planReview: '等待确认计划',
       runningLabel: '运行中',
       doneLabel: '已完成',
+      addWorkspace: '添加工作区',
+      addWorkspaceTitle: '添加工作区…',
+      addWorkspaceBusy: '正在添加…',
+      workspaces: '工作区',
     }
     const EN = {
       attention: 'Needs you',
@@ -150,6 +164,10 @@ window.__ModuleLoader__.load({
       planReview: 'Waiting for a plan review',
       runningLabel: 'Running',
       doneLabel: 'Done',
+      addWorkspace: 'Add workspace',
+      addWorkspaceTitle: 'Add a workspace…',
+      addWorkspaceBusy: 'Adding…',
+      workspaces: 'Workspaces',
     }
 
     /**
@@ -533,26 +551,105 @@ window.__ModuleLoader__.load({
         workspace?.(id)
       }
 
+      // One add attempt. The button does not drive the picker itself: it raises
+      // the shipped `workspace.picker` Factory as a one-shot occurrence, so the
+      // composed backend answers the choice — the native OS chooser or the
+      // in-app browse dialog, whichever the Host resolved at boot. Calling
+      // `uiWorkspace.pickDirectory()` directly would only work on the native
+      // backend; `directoryPicker.pick` refuses with `directory-picker/
+      // unavailable` when the Host serves `browse` (remote authority, SSH, or a
+      // non-loopback bind). The Factory is the seam that covers both, and it
+      // also renders no flow at all when the profile composes neither, which is
+      // what gates `addAvailable` below.
+      //
+      // The occurrence stays mounted until it reports a pick or a close. `open`
+      // is the caller-held visibility; `onClose` settles a cancelled dialog.
+      const [pickerOpen, setPickerOpen] = useState(false)
+      const pickerAnchor = useRef(null)
+
+      // The add flow needs the shipped picker Factory: the board renders no
+      // directory-flow hole of its own, so without that seam there is no way to
+      // choose a directory and the control is hidden rather than dead — the
+      // contract the shipped browser followed for its ＋.
+      const renderFactorySlot = typeof props.renderFactorySlot === 'function'
+        ? props.renderFactorySlot
+        : undefined
+      const addAvailable = renderFactorySlot !== undefined
+
+      /** Raise the picker; the Factory occurrence below owns the actual flow. */
+      const addWorkspace = () => {
+        if (pickerOpen || !addAvailable) return
+        setPickerOpen(true)
+      }
+
       const total = SECTIONS.reduce((sum, state) => sum + groups.buckets[state].length, 0)
+
+      // The add control is a plain button, so the rail branch below can share
+      // it with the expanded header. The shipped browser kept Add-workspace
+      // available in the collapsed rail too (its own 36px control), and a
+      // reader who folds the sidebar should not lose the only route to it.
+      const addButton = addAvailable
+        ? h('button', {
+          type: 'button',
+          className: 'dshAb_add',
+          ref: pickerAnchor,
+          'aria-label': t('addWorkspace'),
+          'aria-busy': pickerOpen ? 'true' : undefined,
+          // The board has no tooltips of its own; the native title explains a
+          // control whose glyph alone is ambiguous in the rail.
+          title: pickerOpen ? t('addWorkspaceBusy') : t('addWorkspaceTitle'),
+          disabled: pickerOpen,
+          onClick: addWorkspace,
+        }, pickerOpen ? '\u22EF' : '+')
+        : null
+
+      // The picker occurrence. It renders nothing until raised (the Factory's
+      // menu and its directory dialog own their own surfaces and portal to the
+      // document body), and it is mounted for both the wide and the rail branch
+      // — a raised flow must survive the sidebar folding underneath it.
+      //
+      // `onPick` receives the Workspace the operator chose or created; the
+      // caller closes the flow there, exactly as the shipped hero picker does.
+      // `onClose` settles a cancelled menu or dialog. The Factory itself calls
+      // `workspaces.create` and `uiWorkspace.startSession` for a picked
+      // directory, so the board never re-implements that sequence.
+      const picker = addAvailable
+        ? renderFactorySlot('workspace.picker', {
+          open: pickerOpen,
+          anchorRef: pickerAnchor,
+          onPick: (workspaceId) => {
+            setPickerOpen(false)
+            open(workspaceId)
+          },
+          onClose: () => { setPickerOpen(false) },
+        })
+        : null
 
       // The collapsed rail keeps one dot per state that has members, so the
       // attention state is still visible without expanding the sidebar.
       if (!wide) {
         const states = ['attention', 'running']
         const dots = states.filter((state) => groups.buckets[state].length > 0)
-        return h('div', { className: 'dshAb_rail' },
-          dots.length === 0
-            ? h('span', {
-              className: 'dshAb_railDot',
-              style: { background: COLORS.idle },
-              'aria-hidden': true,
-            })
-            : dots.map((state) => h('span', {
-              key: state,
-              className: 'dshAb_railDot dshAb_pulse',
-              style: { background: COLORS[state] ?? COLORS.idle },
-              title: `${t(state)}: ${groups.buckets[state].length}`,
-            })))
+        // The stylesheet is emitted here too: this branch returns before the
+        // wide layout's `<style>`, and a rail with no rules paints UA-default
+        // buttons and invisible dots.
+        return h(React.Fragment, null,
+          h('style', { 'data-agent-board': '' }, CSS),
+          h('div', { className: 'dshAb_rail' },
+            dots.length === 0
+              ? h('span', {
+                className: 'dshAb_railDot',
+                style: { background: COLORS.idle },
+                'aria-hidden': true,
+              })
+              : dots.map((state) => h('span', {
+                key: state,
+                className: 'dshAb_railDot dshAb_pulse',
+                style: { background: COLORS[state] ?? COLORS.idle },
+                title: `${t(state)}: ${groups.buckets[state].length}`,
+              })),
+            addButton),
+          picker)
       }
 
       // An expanded section renders every row it holds; a folded one renders
@@ -597,15 +694,26 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dshAb_time' }, relative(row.time)))))
       }
 
+      // The board's own strip. The shipped browser kept Add-workspace in this
+      // row, so the control lives in the same place here. Its label names the
+      // thing the button acts on: the shipped header reads 工作区 while it
+      // groups by workspace, and a bare ＋ under "Sessions" would read as "add
+      // session".
+      const header = h('div', { className: 'dshAb_header' },
+        h('span', { className: 'dshAb_headerLabel' }, t('workspaces')),
+        addButton)
+
       return h(React.Fragment, null,
         h('style', { 'data-agent-board': '' }, CSS),
         h('div', { className: 'dshAb_root' },
+          header,
           h('div', {
             className: 'dshAb_scroll',
             ref: scroller === undefined ? undefined : scroller.bindScrollerRef,
           },
             total === 0 ? h('div', { className: 'dshAb_empty' }, t('empty')) : null,
-            ...SECTIONS.map(section))))
+            ...SECTIONS.map(section))),
+        picker)
     }
 
     const plugin = {
@@ -616,6 +724,36 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({
           name: 'sidebar.workspaces',
           locale: NS,
+          /**
+           * The shipped browser's child declarations, restated.
+           *
+           * `sidebar.workspaces` is a `single` slot, and its child seats are
+           * declared by whichever entry registers into it: the declaration
+           * travels with that one `register()` call. The shipped browser
+           * declares these five, and the directory-picker clients fill
+           * `sidebar.workspaces.directoryFlow` — the seat whose occupancy the
+           * workspace picker reads to decide whether it can offer "Add
+           * workspace" at all.
+           *
+           * Because the board shadows that entry, the browser's declaration
+           * never lands. Without it `sidebar.workspaces.directoryFlow` is not a
+           * declared slot, so `slots.inject('sidebar.workspaces.directoryFlow',
+           * …)` in both directory-picker clients waits forever and the picking
+           * affordance disappears from every surface that asks. Restating the
+           * table here keeps those clients mounting, which is the whole reason
+           * the board can offer its own ＋.
+           *
+           * These must match the shipped declaration exactly (`ui-workspace`'s
+           * own `register` call): a key/kinds drift would either strand a
+           * client or fail the registration outright.
+           */
+          children: {
+            'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+            'sidebar.workspaces.session.row.action': { kind: 'list', scope: 'root' },
+            'sidebar.session.row.leading': { kind: 'list', scope: 'root', inline: true },
+            'sidebar.session.row.trailing': { kind: 'list', scope: 'root', inline: true },
+            'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
+          },
           inject: () => ({
             /**
              * Open one Session in the centre column: select it *and* show its

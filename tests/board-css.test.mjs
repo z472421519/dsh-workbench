@@ -279,3 +279,56 @@ test('the local face list matches families that actually exist on macOS', () => 
     assert.ok(source.includes(`'${family}'`), `missing known family ${family}`)
   }
 })
+
+// ---------------------------------------------------------------------------
+// The add-workspace strip.
+// ---------------------------------------------------------------------------
+
+test('.dshAb_scroll inherits the leftover height instead of claiming all of it', () => {
+  // The board now stacks a header above the list. `height:100%` under a flex
+  // column would claim the full container and push the last rows past the
+  // bottom clip, so the region has to take the remainder (flex:1 1 auto with
+  // min-height:0) exactly as before the header existed.
+  const body = ruleOf('dshAb_scroll')
+  assert.doesNotMatch(body, /height:100%/, 'the list must not claim the whole column')
+  assert.match(body, /flex:1 1 auto/, 'the list takes the space the header leaves')
+  assert.match(body, /min-height:0/, 'a flex child needs min-height:0 to scroll instead of overflowing')
+  assert.match(body, /overflow-y:auto/)
+})
+
+test('.dshAb_add is a real control with a title and a focus ring', () => {
+  const body = ruleOf('dshAb_add')
+  const width = body.match(/width:(\d+)px/)
+  const height = body.match(/height:(\d+)px/)
+  assert.ok(width !== null && height !== null, 'the button needs an explicit box')
+  assert.ok(Number(width[1]) >= 20 && Number(width[1]) <= 28, `add button width ${width[1]}px is off list scale`)
+  assert.match(css, /\.dshAb_add:focus-visible\{/, 'a keyboard reader can see the focus')
+  assert.match(css, /\.dshAb_add\[disabled\]/, 'the busy state must be visibly disabled')
+})
+
+test('the add button is hidden, not dead, without a picking affordance', () => {
+  // The shipped browser hid its ＋ when no directory-flow occupant was
+  // composed; the board keeps that contract. It gates on the picker Factory,
+  // because that Factory (not a direct `pickDirectory()` call) is what covers
+  // both the native and the browse backend.
+  assert.match(source, /const addAvailable = renderFactorySlot !== undefined/,
+    'the control is gated on the picker Factory being renderable')
+  assert.match(source, /const addButton = addAvailable/, 'and hidden when it is not')
+})
+
+test('the stylesheet is emitted on both the wide and the rail branch', () => {
+  // The rail branch returns its own tree. It used to return before the
+  // `<style>` element, so a folded sidebar painted UA-default controls.
+  const styles = [...source.matchAll(/'data-agent-board'/g)]
+  assert.equal(styles.length, 2, 'one stylesheet element per branch')
+})
+
+test('.dshAb_add survives the collapsed rail at list scale', () => {
+  // The rail is 56px wide; a control wider than that would overflow it, and the
+  // add button is the one interactive element the rail carries besides the dots.
+  const body = ruleOf('dshAb_add')
+  const width = body.match(/width:(\d+)px/)
+  assert.ok(width !== null, 'the rail button needs an explicit box')
+  assert.ok(Number(width[1]) <= 40, `add button width ${width[1]}px overflows the 56px rail`)
+  assert.match(body, /border-radius:var\(--dsw-radius-/, 'the control follows the host radius')
+})
